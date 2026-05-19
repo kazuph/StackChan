@@ -9,13 +9,14 @@ using namespace uitk;
 using namespace uitk::lvgl_cpp;
 using namespace stackchan::avatar;
 
-static const Vector2i _container_pos  = Vector2i(0, 89);
-static const Vector2i _container_size = Vector2i(320, 74);
+static const Vector2i _container_pos  = Vector2i(0, 78);
+static const Vector2i _container_size = Vector2i(320, 96);
 static const Vector2i _arrow_offset   = Vector2i(40, -15);
 static const int _text_mx             = 20;
+static const int _text_zoom           = 220;
 static const int _bubble_min_width    = 90;
 static const int _bubble_max_width    = 340;
-static const int _bubble_height       = 52;
+static const int _bubble_height       = 74;
 static const int _bubble_min_offset_x = 66;
 static const int _bubble_max_offset_x = 0;
 
@@ -56,8 +57,9 @@ DefaultSpeechBubble::DefaultSpeechBubble(lv_obj_t* parent, lv_color_t primaryCol
     _text->setTextAlign(LV_TEXT_ALIGN_CENTER);
     _text->setAlign(LV_ALIGN_CENTER);
     _text->setPos(0, 0);
-    _text->setWidth(320 - _text_mx * 2);
-    _text->setLongMode(LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
+    _text->setSize(320 - _text_mx * 2, _bubble_height - 18);
+    _text->setLongMode(LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_style_transform_zoom(_text->get(), _text_zoom, LV_PART_MAIN);
 
     clearSpeech();
 }

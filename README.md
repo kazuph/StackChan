@@ -24,6 +24,41 @@ The **factory firmware** is feature-rich, including an AI Agent, lively and expr
 
 - Board support package: https://github.com/m5stack/StackChan-BSP
 
+## Current Development Direction
+
+This repository is currently being used for a custom StackChan direction rather than strict compatibility with the stock M5Stack firmware, app, and cloud services.
+
+The current goals are:
+
+- Hands-free conversation using STT, local LLM, and TTS processes running on an SSH-accessible PC
+- Integration with a Hermes agent running on that PC so StackChan can use agent capabilities through StackChan, and Hermes can also control StackChan bidirectionally
+- Remote audio/video calling from a React Native app through StackChan
+
+In this direction, StackChan is treated more like a network-connected device endpoint for audio, camera, motion, expression, and speech control, while the main intelligence and orchestration live on the PC/agent side.
+
+## Voice bridge environment setup
+
+The custom voice bridge under `server/bridge/` now reads StackChan-specific runtime settings from a local `.env` file. This keeps machine-specific LAN IPs, local API URLs, and voice settings out of tracked source.
+
+Create `server/bridge/.env` or repository-root `.env` from this template:
+
+```dotenv
+STACKCHAN_BRIDGE_HOST=192.168.x.x
+STACKCHAN_BRIDGE_PORT=8787
+STACKCHAN_STT_URL=http://127.0.0.1:8088/api/stt/v1/stt
+STACKCHAN_TTS_URL=http://127.0.0.1:8088/api/tts/v1/tts
+STACKCHAN_LLM_URL=http://127.0.0.1:8088/api/llm/v1/chat/completions
+STACKCHAN_LLM_MODEL=
+STACKCHAN_VOICE_LOCK_ID=
+```
+
+Notes:
+
+- `STACKCHAN_BRIDGE_HOST` is optional. If omitted, the OTA endpoint uses the request host automatically.
+- `STACKCHAN_STT_URL`, `STACKCHAN_TTS_URL`, and `STACKCHAN_LLM_URL` default to `127.0.0.1` so the bridge can run on the same host as the gateway/backends without embedding a personal LAN IP in source control.
+- `STACKCHAN_LLM_MODEL` and `STACKCHAN_VOICE_LOCK_ID` are also optional so model choice and voice choice can stay local to each machine.
+- The bridge still binds on `0.0.0.0:$STACKCHAN_BRIDGE_PORT` when started directly.
+
 Thank you to the contributors of the StackChan community, especially: 
 
 | ![](https://m5stack-doc.oss-cn-shenzhen.aliyuncs.com/1205/avatar_stack_chan.jpg) | ![](https://m5stack-doc.oss-cn-shenzhen.aliyuncs.com/1205/avatar_takao.jpg) |

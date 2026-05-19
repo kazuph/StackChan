@@ -17,6 +17,7 @@
 #include <stackchan/stackchan.h>
 #include <assets/lang_config.h>
 #include <hal/hal.h>
+#include <application.h>
 
 using namespace stackchan;
 using namespace stackchan::avatar;
@@ -206,6 +207,9 @@ StackChanAvatarDisplay::~StackChanAvatarDisplay()
     if (preview_image_ != nullptr) {
         lv_obj_del(preview_image_);
     }
+    if (listening_indicator_ != nullptr) {
+        lv_obj_del(listening_indicator_);
+    }
 
     auto& stackchan = GetStackChan();
     if (stackchan.hasAvatar()) {
@@ -226,6 +230,18 @@ void StackChanAvatarDisplay::Unlock()
 lv_disp_t* StackChanAvatarDisplay::GetLvglDisplay()
 {
     return display_;
+}
+
+void StackChanAvatarDisplay::RefreshListeningIndicator(bool listening)
+{
+    if (listening_indicator_ == nullptr) {
+        return;
+    }
+    if (listening) {
+        lv_obj_remove_flag(listening_indicator_, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(listening_indicator_, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 #include <hal/board/hal_bridge.h>
@@ -269,6 +285,18 @@ void StackChanAvatarDisplay::SetupUI()
     lv_obj_set_size(preview_image_, 320, 240);
     lv_obj_align(preview_image_, LV_ALIGN_CENTER, 0, 0);
     lv_obj_add_flag(preview_image_, LV_OBJ_FLAG_HIDDEN);
+
+    listening_indicator_ = lv_obj_create(lv_screen_active());
+    lv_obj_set_size(listening_indicator_, 12, 12);
+    lv_obj_align(listening_indicator_, LV_ALIGN_TOP_RIGHT, -8, 8);
+    lv_obj_set_style_radius(listening_indicator_, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(listening_indicator_, lv_color_hex(0xFF3B30), 0);
+    lv_obj_set_style_bg_opa(listening_indicator_, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(listening_indicator_, 0, 0);
+    lv_obj_set_style_pad_all(listening_indicator_, 0, 0);
+    lv_obj_set_style_shadow_width(listening_indicator_, 0, 0);
+    lv_obj_add_flag(listening_indicator_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(listening_indicator_);
 
     // GetHAL().startStackChanAutoUpdate(24);
 
@@ -438,6 +466,10 @@ void StackChanAvatarDisplay::SetPreviewImage(std::unique_ptr<LvglImage> image)
 
 void StackChanAvatarDisplay::UpdateStatusBar(bool update_all)
 {
+    LvglDisplay::UpdateStatusBar(update_all);
+    DisplayLockGuard lock(this);
+    auto state = Application::GetInstance().GetDeviceState();
+    RefreshListeningIndicator(state == kDeviceStateListening);
 }
 
 void StackChanAvatarDisplay::SetTheme(Theme* theme)
@@ -489,6 +521,7 @@ void StackChanAvatarDisplay::SetStatus(const char* status)
     bool is_listening = false;
 
     if (strcmp(status, Lang::Strings::LISTENING) == 0) {
+        is_listening = true;
         if (speaking_modifier_id_ >= 0) {
             // Start speaking
             stackchan.removeModifier(speaking_modifier_id_);
@@ -518,6 +551,8 @@ void StackChanAvatarDisplay::SetStatus(const char* status)
         if (speaking_modifier_id_ < 0) {
             speaking_modifier_id_ = stackchan.addModifier(std::make_unique<SpeakingModifier>(0, 180, false));
         }
+
+        RefreshListeningIndicator(is_listening);
 
         GetHAL().setRgbColor(0, 0, 0, 50);
         GetHAL().refreshRgb();
@@ -563,4 +598,5 @@ void StackChanAvatarDisplay::SetStatus(const char* status)
 
 void StackChanAvatarDisplay::ShowNotification(const char* notification, int duration_ms)
 {
+    LvglDisplay::ShowNotification(notification, duration_ms);
 }
