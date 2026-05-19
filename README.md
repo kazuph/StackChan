@@ -40,7 +40,15 @@ In this direction, StackChan is treated more like a network-connected device end
 
 The custom voice bridge under `server/bridge/` now reads StackChan-specific runtime settings from a local `.env` file. This keeps machine-specific LAN IPs, local API URLs, and voice settings out of tracked source.
 
-Create `server/bridge/.env` or repository-root `.env` from this template:
+The committed file is `server/bridge/.env.example`. The actual runtime file is `server/bridge/.env` (or repository-root `.env`), and it is intentionally **not committed**.
+
+Create the local file before running the bridge:
+
+```bash
+cp server/bridge/.env.example server/bridge/.env
+```
+
+Then edit `server/bridge/.env` for your machine:
 
 ```dotenv
 STACKCHAN_BRIDGE_HOST=192.168.x.x
@@ -54,6 +62,7 @@ STACKCHAN_VOICE_LOCK_ID=
 
 Notes:
 
+- If conversation memory were gone, the repository still tells you the expected file layout: `server/bridge/.env.example` is committed, while `server/bridge/.env` must exist locally and is ignored.
 - `STACKCHAN_BRIDGE_HOST` is optional. If omitted, the OTA endpoint uses the request host automatically.
 - `STACKCHAN_STT_URL`, `STACKCHAN_TTS_URL`, and `STACKCHAN_LLM_URL` default to `127.0.0.1` so the bridge can run on the same host as the gateway/backends without embedding a personal LAN IP in source control.
 - `STACKCHAN_LLM_MODEL` and `STACKCHAN_VOICE_LOCK_ID` are also optional so model choice and voice choice can stay local to each machine.
