@@ -56,12 +56,15 @@ MAX_TTS_SECONDS = float(os.environ.get("STACKCHAN_MAX_TTS_SECONDS", "18.0"))
 TTS_SECONDS_PER_CHAR = float(os.environ.get("STACKCHAN_TTS_SECONDS_PER_CHAR", "0.22"))
 TTS_RETRY_ATTEMPTS = int(os.environ.get("STACKCHAN_TTS_RETRY_ATTEMPTS", "3"))
 TTS_RETRY_BACKOFF_SECONDS = float(os.environ.get("STACKCHAN_TTS_RETRY_BACKOFF_SECONDS", "0.75"))
+LLM_MAX_TOKENS = int(os.environ.get("STACKCHAN_LLM_MAX_TOKENS", "2048"))
 ENABLE_LLM_END_DETECTION = os.environ.get("STACKCHAN_ENABLE_LLM_END_DETECTION", "").strip().lower() in {"1", "true", "yes", "on"}
 VOICE_INSTRUCT = "小さな妖精みたいなAIの声で、自然で聞き取りやすい日本語で話してください。"
 SYSTEM_PROMPT = (
     "あなたはスタックちゃんです。自分自身のことをスタックちゃんとして自然に話してください。"
-    "家族は4人で、子どもは2人です。お姉ちゃんはこはるちゃん、弟はゆうくんです。"
-    "この家族情報を会話の前提として扱ってください。"
+    "あなたは4人家族の家に同居しているAIです。スタックちゃん自身に子どもはいません。"
+    "家族は、父のかずさん、母のちひろさん、娘のこはたん、弟のゆうくんです。"
+    "こはたんとゆうくんはどちらも小学生です。幼稚園児として扱わないでください。"
+    "Whisperなどの音声認識結果には言い間違い、言いよどみ、脱字、誤変換が混ざる前提で、音声入力らしい文脈を踏まえて意味を補って理解してください。"
     "返答は必ず短く、聞き取りやすい2文で答えてください。"
     "Markdown や箇条書きは使わず、そのまま読み上げられる文だけを返してください。"
     "思考過程タグ、XML風タグ、メタ説明は出さないでください。"
@@ -235,7 +238,7 @@ async def run_llm(history: list[dict[str, str]], user_text: str, extra_system_pr
     payload = {
         "messages": messages,
         "temperature": 0.6,
-        "max_tokens": 256,
+        "max_tokens": LLM_MAX_TOKENS,
         "stop": ["<think>", "</think>"],
     }
     response_payload = await _request_llm_completion(payload)

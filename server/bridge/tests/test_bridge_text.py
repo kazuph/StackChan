@@ -11,6 +11,8 @@ from server.bridge.stackchan_env import load_dotenv
 from server.bridge.stackchan_voice_bridge import (
     BridgeSession,
     ENABLE_LLM_END_DETECTION,
+    LLM_MAX_TOKENS,
+    SYSTEM_PROMPT,
     is_repetitive_answer,
     is_exit_phrase,
     resolve_bridge_host,
@@ -78,6 +80,7 @@ def test_run_llm_uses_full_history(monkeypatch: pytest.MonkeyPatch):
 
     async def fake_post(url, json, headers=None):
         captured["messages"] = json["messages"]
+        captured["max_tokens"] = json["max_tokens"]
         request = httpx.Request("POST", url)
         return httpx.Response(
             200,
@@ -101,6 +104,21 @@ def test_run_llm_uses_full_history(monkeypatch: pytest.MonkeyPatch):
     result = asyncio.run(run_llm(history, "最新の質問"))
     assert result == "了解だよ。"
     assert captured["messages"][1:-1] == history
+    assert captured["max_tokens"] == 2048
+
+
+def test_system_prompt_reflects_speech_context_and_family_roles():
+    assert "スタックちゃん自身に子どもはいません" in SYSTEM_PROMPT
+    assert "かずさん" in SYSTEM_PROMPT
+    assert "ちひろさん" in SYSTEM_PROMPT
+    assert "こはたん" in SYSTEM_PROMPT
+    assert "ゆうくん" in SYSTEM_PROMPT
+    assert "どちらも小学生" in SYSTEM_PROMPT
+    assert "Whisper" in SYSTEM_PROMPT
+
+
+def test_llm_max_tokens_default_is_2048():
+    assert LLM_MAX_TOKENS == 2048
 
 
 def test_run_llm_falls_back_to_gemini_when_primary_fails(monkeypatch: pytest.MonkeyPatch):
