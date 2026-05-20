@@ -57,6 +57,10 @@ STACKCHAN_STT_URL=http://127.0.0.1:8088/api/stt/v1/stt
 STACKCHAN_TTS_URL=http://127.0.0.1:8088/api/tts/v1/tts
 STACKCHAN_LLM_URL=http://127.0.0.1:8088/api/llm/v1/chat/completions
 STACKCHAN_LLM_MODEL=
+STACKCHAN_LLM_API_KEY=
+STACKCHAN_GEMINI_FALLBACK_URL=https://generativelanguage.googleapis.com/v1beta/openai/chat/completions
+STACKCHAN_GEMINI_FALLBACK_MODEL=gemini-2.5-flash-lite
+STACKCHAN_GEMINI_API_KEY=
 STACKCHAN_VOICE_LOCK_ID=
 ```
 
@@ -66,6 +70,7 @@ Notes:
 - `STACKCHAN_BRIDGE_HOST` is optional. If omitted, the OTA endpoint uses the request host automatically.
 - `STACKCHAN_STT_URL`, `STACKCHAN_TTS_URL`, and `STACKCHAN_LLM_URL` default to `127.0.0.1` so the bridge can run on the same host as the gateway/backends without embedding a personal LAN IP in source control.
 - `STACKCHAN_LLM_MODEL` and `STACKCHAN_VOICE_LOCK_ID` are also optional so model choice and voice choice can stay local to each machine.
+- `STACKCHAN_GEMINI_FALLBACK_*` lets the bridge fall back to Gemini Flash-Lite through Google's OpenAI-compatible endpoint when the primary LLM fails.
 - The bridge still binds on `0.0.0.0:$STACKCHAN_BRIDGE_PORT` when started directly.
 
 Thank you to the contributors of the StackChan community, especially: 

@@ -23,6 +23,7 @@ private:
 
     lv_obj_t* preview_image_                         = nullptr;
     lv_obj_t* listening_indicator_                   = nullptr;
+    lv_obj_t* user_transcript_label_                 = nullptr;
     esp_timer_handle_t preview_timer_                = nullptr;
     std::unique_ptr<LvglImage> preview_image_cached_ = nullptr;
 

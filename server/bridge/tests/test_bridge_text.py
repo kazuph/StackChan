@@ -9,9 +9,12 @@ from fastapi import Request
 from server.bridge import stackchan_voice_bridge as bridge
 from server.bridge.stackchan_env import load_dotenv
 from server.bridge.stackchan_voice_bridge import (
+    BridgeSession,
+    ENABLE_LLM_END_DETECTION,
     is_repetitive_answer,
     is_exit_phrase,
     resolve_bridge_host,
+    should_end_conversation,
     run_llm,
     run_tts,
     sanitize_llm_text,
@@ -33,7 +36,13 @@ def test_sanitize_llm_text_drops_parrot_reply():
 def test_sanitize_llm_text_keeps_short_reply():
     raw = "スタックちゃんだよ。よろしくね。3文目は切ってね。"
 
-    assert sanitize_llm_text(raw, "自己紹介して") == "スタックちゃんだよ。よろしくね。"
+    assert sanitize_llm_text(raw, "自己紹介して") == "スタックちゃんだよ。よろしくね。3文目は切ってね。"
+
+
+def test_sanitize_llm_text_does_not_truncate_mid_sentence():
+    raw = "今日は少し長めに話すね。まだ続きがあるよ。最後まで自然に読み上げてね。"
+
+    assert sanitize_llm_text(raw, "なにしてるの?") == raw
 
 
 def test_is_exit_phrase_detects_good_night():
@@ -43,7 +52,7 @@ def test_is_exit_phrase_detects_good_night():
 def test_sanitize_startup_greeting_keeps_one_short_sentence():
     raw = "<think>foo</think>ふふふ、起きたよ。今日はいい日だよ。"
 
-    assert sanitize_startup_greeting(raw) == "ふふふ、起きたよ。"
+    assert sanitize_startup_greeting(raw) == "ふふふ、起きたよ。今日はいい日だよ。"
 
 
 def test_is_repetitive_answer_detects_same_reply_for_new_question():
@@ -67,7 +76,7 @@ def test_is_repetitive_answer_allows_same_reply_for_same_question():
 def test_run_llm_uses_full_history(monkeypatch: pytest.MonkeyPatch):
     captured = {}
 
-    async def fake_post(url, json):
+    async def fake_post(url, json, headers=None):
         captured["messages"] = json["messages"]
         request = httpx.Request("POST", url)
         return httpx.Response(
@@ -94,6 +103,33 @@ def test_run_llm_uses_full_history(monkeypatch: pytest.MonkeyPatch):
     assert captured["messages"][1:-1] == history
 
 
+def test_run_llm_falls_back_to_gemini_when_primary_fails(monkeypatch: pytest.MonkeyPatch):
+    calls = []
+
+    async def fake_post(url, json, headers=None):
+        calls.append((url, json, headers))
+        request = httpx.Request("POST", url)
+        if url == "http://primary.invalid/chat/completions":
+            return httpx.Response(503, request=request, text="primary down")
+        return httpx.Response(200, request=request, json={"choices": [{"message": {"content": "Gemini だよ。"}}]})
+
+    monkeypatch.setattr(bridge.http_client, "post", fake_post)
+    monkeypatch.setattr(bridge, "LLM_URL", "http://primary.invalid/chat/completions")
+    monkeypatch.setattr(bridge, "LLM_MODEL", "primary-model")
+    monkeypatch.setattr(bridge, "LLM_API_KEY", "")
+    monkeypatch.setattr(bridge, "GEMINI_FALLBACK_URL", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
+    monkeypatch.setattr(bridge, "GEMINI_FALLBACK_MODEL", "gemini-2.5-flash-lite")
+    monkeypatch.setattr(bridge, "GEMINI_API_KEY", "gemini-test-key")
+
+    result = asyncio.run(run_llm([], "こんにちは"))
+
+    assert result == "Gemini だよ。"
+    assert len(calls) == 2
+    assert calls[1][1]["model"] == "gemini-2.5-flash-lite"
+    assert calls[1][1]["reasoning_effort"] == "minimal"
+    assert calls[1][2] == {"Authorization": "Bearer gemini-test-key"}
+
+
 def test_run_tts_retries_transient_gateway_errors(monkeypatch: pytest.MonkeyPatch):
     request = httpx.Request("POST", bridge.TTS_URL)
     responses = [
@@ -101,7 +137,7 @@ def test_run_tts_retries_transient_gateway_errors(monkeypatch: pytest.MonkeyPatc
         httpx.Response(200, request=request, content=b"wav-bytes"),
     ]
 
-    async def fake_post(url, json):
+    async def fake_post(url, json, headers=None):
         return responses.pop(0)
 
     async def fake_sleep(_delay):
@@ -119,6 +155,70 @@ def test_summarize_http_error_truncates_long_body():
     exc = httpx.HTTPStatusError("boom", request=request, response=response)
 
     assert summarize_http_error(exc).endswith("...")
+
+
+def test_should_end_conversation_uses_keyword_without_llm():
+    assert asyncio.run(should_end_conversation([], "じゃあお休み")) is True
+
+
+def test_should_end_conversation_does_not_end_on_polite_closing_when_llm_detection_disabled(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(bridge, "ENABLE_LLM_END_DETECTION", False)
+
+    async def fail_post(*_args, **_kwargs):
+        raise AssertionError("LLM end detection should not run")
+
+    monkeypatch.setattr(bridge.http_client, "post", fail_post)
+
+    assert asyncio.run(should_end_conversation([], "お疲れ様でした。")) is False
+
+
+def test_send_startup_greeting_does_not_request_idle_after_tts(monkeypatch: pytest.MonkeyPatch):
+    session = BridgeSession(websocket=None)  # type: ignore[arg-type]
+    sent_payloads = []
+
+    async def fake_startup():
+        return "ふふ、起きたよ。"
+
+    async def fake_tts(_text: str):
+        return b"wav"
+
+    def fake_opus(_wav: bytes):
+        return [b"opus"]
+
+    async def fake_send_json(payload):
+        sent_payloads.append(payload)
+
+    async def fake_send_audio_stream(_packets):
+        return None
+
+    monkeypatch.setattr(bridge, "run_startup_greeting_llm", fake_startup)
+    monkeypatch.setattr(bridge, "run_tts", fake_tts)
+    monkeypatch.setattr(bridge, "wav_bytes_to_opus_packets", fake_opus)
+    monkeypatch.setattr(session, "send_json", fake_send_json)
+    monkeypatch.setattr(session, "send_audio_stream", fake_send_audio_stream)
+
+    asyncio.run(session.send_startup_greeting())
+
+    assert not any(
+        payload.get("type") == "system" and payload.get("command") == "idle_after_tts"
+        for payload in sent_payloads
+    )
+    assert sent_payloads[-1] == {"type": "tts", "state": "stop"}
+
+
+def test_trigger_manual_speech_does_not_request_idle_after_tts(monkeypatch: pytest.MonkeyPatch):
+    session = BridgeSession(websocket=None)  # type: ignore[arg-type]
+    spawned = []
+
+    def fake_spawn_response(coro):
+        spawned.append(coro)
+        coro.close()
+
+    monkeypatch.setattr(session, "spawn_response", fake_spawn_response)
+
+    session.trigger_manual_speech("こんにちは")
+
+    assert len(spawned) == 1
 
 
 def test_resolve_bridge_host_prefers_request_host(monkeypatch: pytest.MonkeyPatch):

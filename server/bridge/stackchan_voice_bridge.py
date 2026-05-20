@@ -17,7 +17,10 @@ import numpy as np
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi import Request
 
-from server.bridge.stackchan_env import load_dotenv
+try:
+    from server.bridge.stackchan_env import load_dotenv
+except ModuleNotFoundError:
+    from stackchan_env import load_dotenv
 
 
 load_dotenv(Path(__file__).resolve().parent)
@@ -28,6 +31,16 @@ STT_URL = os.environ.get("STACKCHAN_STT_URL", "http://127.0.0.1:8088/api/stt/v1/
 TTS_URL = os.environ.get("STACKCHAN_TTS_URL", "http://127.0.0.1:8088/api/tts/v1/tts")
 LLM_URL = os.environ.get("STACKCHAN_LLM_URL", "http://127.0.0.1:8088/api/llm/v1/chat/completions")
 LLM_MODEL = os.environ.get("STACKCHAN_LLM_MODEL", "").strip()
+LLM_API_KEY = os.environ.get("STACKCHAN_LLM_API_KEY", "").strip()
+GEMINI_FALLBACK_URL = os.environ.get(
+    "STACKCHAN_GEMINI_FALLBACK_URL",
+    "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+).strip()
+GEMINI_FALLBACK_MODEL = os.environ.get("STACKCHAN_GEMINI_FALLBACK_MODEL", "gemini-2.5-flash-lite").strip()
+GEMINI_API_KEY = os.environ.get(
+    "STACKCHAN_GEMINI_API_KEY",
+    os.environ.get("GEMINI_API_KEY", os.environ.get("GOOGLE_API_KEY", "")),
+).strip()
 TIMEZONE_OFFSET_MINUTES = int(os.environ.get("STACKCHAN_TIMEZONE_OFFSET_MINUTES", "540"))
 VOICE_LOCK_ID = os.environ.get("STACKCHAN_VOICE_LOCK_ID", "").strip()
 TTS_SECONDS = float(os.environ.get("STACKCHAN_TTS_SECONDS", "4.0"))
@@ -43,8 +56,7 @@ MAX_TTS_SECONDS = float(os.environ.get("STACKCHAN_MAX_TTS_SECONDS", "18.0"))
 TTS_SECONDS_PER_CHAR = float(os.environ.get("STACKCHAN_TTS_SECONDS_PER_CHAR", "0.22"))
 TTS_RETRY_ATTEMPTS = int(os.environ.get("STACKCHAN_TTS_RETRY_ATTEMPTS", "3"))
 TTS_RETRY_BACKOFF_SECONDS = float(os.environ.get("STACKCHAN_TTS_RETRY_BACKOFF_SECONDS", "0.75"))
-MAX_RESPONSE_SENTENCES = int(os.environ.get("STACKCHAN_MAX_RESPONSE_SENTENCES", "2"))
-MAX_RESPONSE_CHARACTERS = int(os.environ.get("STACKCHAN_MAX_RESPONSE_CHARACTERS", "56"))
+ENABLE_LLM_END_DETECTION = os.environ.get("STACKCHAN_ENABLE_LLM_END_DETECTION", "").strip().lower() in {"1", "true", "yes", "on"}
 VOICE_INSTRUCT = "小さな妖精みたいなAIの声で、自然で聞き取りやすい日本語で話してください。"
 SYSTEM_PROMPT = (
     "あなたはスタックちゃんです。自分自身のことをスタックちゃんとして自然に話してください。"
@@ -77,7 +89,6 @@ THINK_TAG_BLOCK_RE = re.compile(r"<think\b[^>]*>.*?</think>", re.IGNORECASE | re
 THINK_TAG_RE = re.compile(r"</?think\b[^>]*>", re.IGNORECASE)
 WHITESPACE_RE = re.compile(r"\s+")
 COMPARE_NORMALIZE_RE = re.compile(r"[\s\u3000、。！？!?…,.「」『』（）()\-]+")
-SENTENCE_SPLIT_RE = re.compile(r"(?<=[。！？!?])\s*")
 
 
 app = FastAPI(title="stackchan-voice-bridge")
@@ -177,6 +188,45 @@ async def run_stt(wav_bytes: bytes) -> str:
     return payload.get("text", "").strip()
 
 
+def _llm_headers(api_key: str) -> dict[str, str] | None:
+    if not api_key:
+        return None
+    return {"Authorization": f"Bearer {api_key}"}
+
+
+async def _post_llm(url: str, payload: dict[str, Any], api_key: str = "") -> dict[str, Any]:
+    request_kwargs: dict[str, Any] = {"json": payload}
+    headers = _llm_headers(api_key)
+    if headers:
+        request_kwargs["headers"] = headers
+    response = await http_client.post(url, **request_kwargs)
+    response.raise_for_status()
+    return response.json()
+
+
+async def _request_llm_completion(payload: dict[str, Any]) -> dict[str, Any]:
+    primary_error: Exception | None = None
+    primary_payload = dict(payload)
+    if LLM_MODEL:
+        primary_payload["model"] = LLM_MODEL
+    try:
+        return await _post_llm(LLM_URL, primary_payload, api_key=LLM_API_KEY)
+    except Exception as exc:
+        primary_error = exc
+        logger.warning("llm_primary_failed url=%s model=%s error=%s", LLM_URL, LLM_MODEL or "<default>", exc)
+
+    if GEMINI_API_KEY and GEMINI_FALLBACK_URL and GEMINI_FALLBACK_MODEL:
+        fallback_payload = dict(payload)
+        fallback_payload["model"] = GEMINI_FALLBACK_MODEL
+        fallback_payload.setdefault("reasoning_effort", "minimal")
+        logger.info("llm_fallback_to_gemini model=%s", GEMINI_FALLBACK_MODEL)
+        return await _post_llm(GEMINI_FALLBACK_URL, fallback_payload, api_key=GEMINI_API_KEY)
+
+    if primary_error is not None:
+        raise primary_error
+    raise RuntimeError("LLM request failed without configured fallback")
+
+
 async def run_llm(history: list[dict[str, str]], user_text: str, extra_system_prompt: str = "") -> str:
     system_prompt = SYSTEM_PROMPT if not extra_system_prompt else f"{SYSTEM_PROMPT}{extra_system_prompt}"
     messages = [{"role": "system", "content": system_prompt}]
@@ -188,15 +238,8 @@ async def run_llm(history: list[dict[str, str]], user_text: str, extra_system_pr
         "max_tokens": 256,
         "stop": ["<think>", "</think>"],
     }
-    if LLM_MODEL:
-        payload["model"] = LLM_MODEL
-    response = await http_client.post(
-        LLM_URL,
-        json=payload,
-    )
-    response.raise_for_status()
-    payload = response.json()
-    return payload["choices"][0]["message"]["content"].strip()
+    response_payload = await _request_llm_completion(payload)
+    return response_payload["choices"][0]["message"]["content"].strip()
 
 
 async def run_startup_greeting_llm() -> str:
@@ -206,20 +249,15 @@ async def run_startup_greeting_llm() -> str:
         "max_tokens": 64,
         "stop": ["<think>", "</think>", "\n"],
     }
-    if LLM_MODEL:
-        payload["model"] = LLM_MODEL
-    response = await http_client.post(
-        LLM_URL,
-        json=payload,
-    )
-    response.raise_for_status()
-    payload = response.json()
-    return payload["choices"][0]["message"]["content"].strip()
+    response_payload = await _request_llm_completion(payload)
+    return response_payload["choices"][0]["message"]["content"].strip()
 
 
 async def should_end_conversation(history: list[dict[str, str]], user_text: str) -> bool:
     if is_exit_phrase(user_text):
         return True
+    if not ENABLE_LLM_END_DETECTION:
+        return False
     messages = [{"role": "system", "content": END_CONVERSATION_PROMPT}]
     messages.extend(history)
     messages.append({"role": "user", "content": user_text})
@@ -229,15 +267,8 @@ async def should_end_conversation(history: list[dict[str, str]], user_text: str)
         "max_tokens": 8,
         "stop": ["\n"],
     }
-    if LLM_MODEL:
-        payload["model"] = LLM_MODEL
-    response = await http_client.post(
-        LLM_URL,
-        json=payload,
-    )
-    response.raise_for_status()
-    payload = response.json()
-    verdict = payload["choices"][0]["message"]["content"].strip().upper()
+    response_payload = await _request_llm_completion(payload)
+    verdict = response_payload["choices"][0]["message"]["content"].strip().upper()
     return verdict.startswith("END")
 
 
@@ -263,11 +294,6 @@ def sanitize_llm_text(text: str, user_text: str) -> str:
     cleaned = WHITESPACE_RE.sub(" ", cleaned).strip()
     if not cleaned:
         return ""
-    sentences = [sentence.strip() for sentence in SENTENCE_SPLIT_RE.split(cleaned) if sentence.strip()]
-    if sentences:
-        cleaned = "".join(sentences[:MAX_RESPONSE_SENTENCES]).strip()
-    if len(cleaned) > MAX_RESPONSE_CHARACTERS:
-        cleaned = cleaned[:MAX_RESPONSE_CHARACTERS].rstrip()
     if normalize_compare_text(cleaned) == normalize_compare_text(user_text):
         return ""
     return cleaned
@@ -277,11 +303,6 @@ def sanitize_startup_greeting(text: str) -> str:
     cleaned = THINK_TAG_BLOCK_RE.sub("", text)
     cleaned = THINK_TAG_RE.sub("", cleaned)
     cleaned = WHITESPACE_RE.sub(" ", cleaned).strip()
-    sentences = [sentence.strip() for sentence in SENTENCE_SPLIT_RE.split(cleaned) if sentence.strip()]
-    if sentences:
-        cleaned = sentences[0]
-    if len(cleaned) > 24:
-        cleaned = cleaned[:24].rstrip()
     return cleaned
 
 
@@ -394,7 +415,6 @@ class BridgeSession:
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     audio_packet_count: int = 0
     pending_end_conversation: bool = False
-    pending_idle_after_tts: bool = False
     closed: bool = False
 
     async def send_json(self, payload: dict[str, Any]) -> None:
@@ -482,7 +502,6 @@ class BridgeSession:
     def trigger_manual_speech(self, text: str) -> None:
         async def runner() -> None:
             await self.cancel_response()
-            self.pending_idle_after_tts = True
             await self.respond(text, from_stt=False)
 
         self.spawn_response(runner())
@@ -532,7 +551,6 @@ class BridgeSession:
         await self.respond(answer, from_stt=True)
 
     async def send_startup_greeting(self) -> None:
-        self.pending_idle_after_tts = True
         try:
             raw_text = await run_startup_greeting_llm()
         except Exception as exc:
@@ -566,9 +584,6 @@ class BridgeSession:
         if self.pending_end_conversation:
             await self.send_json({"type": "system", "command": "end_conversation"})
             self.pending_end_conversation = False
-        elif self.pending_idle_after_tts:
-            await self.send_json({"type": "system", "command": "idle_after_tts"})
-            self.pending_idle_after_tts = False
         await self.send_json({"type": "tts", "state": "stop"})
 
 
