@@ -57,6 +57,7 @@ TTS_SECONDS_PER_CHAR = float(os.environ.get("STACKCHAN_TTS_SECONDS_PER_CHAR", "0
 TTS_RETRY_ATTEMPTS = int(os.environ.get("STACKCHAN_TTS_RETRY_ATTEMPTS", "3"))
 TTS_RETRY_BACKOFF_SECONDS = float(os.environ.get("STACKCHAN_TTS_RETRY_BACKOFF_SECONDS", "0.75"))
 LLM_MAX_TOKENS = int(os.environ.get("STACKCHAN_LLM_MAX_TOKENS", "2048"))
+MAX_CONSECUTIVE_NO_INPUTS = int(os.environ.get("STACKCHAN_MAX_CONSECUTIVE_NO_INPUTS", "2"))
 ENABLE_LLM_END_DETECTION = os.environ.get("STACKCHAN_ENABLE_LLM_END_DETECTION", "").strip().lower() in {"1", "true", "yes", "on"}
 VOICE_INSTRUCT = "小さな妖精みたいなAIの声で、自然で聞き取りやすい日本語で話してください。"
 SYSTEM_PROMPT = (
@@ -309,6 +310,10 @@ def sanitize_startup_greeting(text: str) -> str:
     return cleaned
 
 
+def sanitize_display_transcript(text: str) -> str:
+    return WHITESPACE_RE.sub("", text)
+
+
 def find_last_message(history: list[dict[str, str]], role: str) -> str:
     for message in reversed(history):
         if message.get("role") == role:
@@ -419,6 +424,7 @@ class BridgeSession:
     audio_packet_count: int = 0
     pending_end_conversation: bool = False
     pending_idle_after_tts: bool = False
+    consecutive_no_input_count: int = 0
     closed: bool = False
 
     async def send_json(self, payload: dict[str, Any]) -> None:
@@ -516,13 +522,23 @@ class BridgeSession:
             self.input_packets.append(payload)
             self.audio_packet_count += 1
 
+    async def handle_missed_input(self) -> None:
+        self.consecutive_no_input_count += 1
+        should_stop = self.consecutive_no_input_count >= MAX_CONSECUTIVE_NO_INPUTS
+        if should_stop:
+            self.pending_idle_after_tts = True
+            message = "聞こえませんでした。いったん終わるね。"
+        else:
+            message = "聞こえませんでした。もう一度お願いします。"
+        await self.respond(message, from_stt=False)
+
     async def stop_listening(self) -> None:
         self.listening = False
         packets = list(self.input_packets)
         self.input_packets.clear()
         logger.info("session=%s stop_listening packets=%d", self.session_id, self.audio_packet_count)
         if not packets:
-            self.spawn_response(self.respond("聞こえませんでした。もう一度お願いします。", from_stt=False))
+            self.spawn_response(self.handle_missed_input())
             return
         self.spawn_response(self.handle_turn(packets))
 
@@ -531,9 +547,10 @@ class BridgeSession:
         user_text = await run_stt(wav_bytes)
         logger.info("session=%s stt=%r", self.session_id, user_text)
         if not user_text:
-            await self.respond("聞こえませんでした。もう一度お願いします。", from_stt=False)
+            await self.handle_missed_input()
             return
-        await self.send_json({"type": "stt", "text": user_text})
+        self.consecutive_no_input_count = 0
+        await self.send_json({"type": "stt", "text": sanitize_display_transcript(user_text)})
         self.pending_end_conversation = await safe_should_end_conversation(self.history, user_text)
         logger.info("session=%s end_conversation=%d", self.session_id, int(self.pending_end_conversation))
         try:

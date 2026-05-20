@@ -19,6 +19,7 @@ from server.bridge.stackchan_voice_bridge import (
     should_end_conversation,
     run_llm,
     run_tts,
+    sanitize_display_transcript,
     sanitize_llm_text,
     sanitize_startup_greeting,
     summarize_http_error,
@@ -246,6 +247,29 @@ def test_trigger_manual_speech_marks_idle_after_tts(monkeypatch: pytest.MonkeyPa
 
     assert session.pending_idle_after_tts is True
     assert recorded == {"text": "こんにちは", "from_stt": False}
+
+
+def test_handle_missed_input_stops_after_two_times(monkeypatch: pytest.MonkeyPatch):
+    session = BridgeSession(websocket=None)  # type: ignore[arg-type]
+    calls = []
+
+    async def fake_respond(text: str, from_stt: bool):
+        calls.append((text, from_stt, session.pending_idle_after_tts))
+
+    monkeypatch.setattr(session, "respond", fake_respond)
+
+    asyncio.run(session.handle_missed_input())
+    asyncio.run(session.handle_missed_input())
+
+    assert calls == [
+        ("聞こえませんでした。もう一度お願いします。", False, False),
+        ("聞こえませんでした。いったん終わるね。", False, True),
+    ]
+    assert session.consecutive_no_input_count == 2
+
+
+def test_sanitize_display_transcript_removes_whitespace():
+    assert sanitize_display_transcript(" しり とり\nして　いい? ") == "しりとりしていい?"
 
 
 def test_resolve_bridge_host_prefers_request_host(monkeypatch: pytest.MonkeyPatch):
