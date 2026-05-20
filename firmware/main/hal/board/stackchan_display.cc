@@ -28,11 +28,6 @@ LV_FONT_DECLARE(BUILTIN_TEXT_FONT);
 LV_FONT_DECLARE(BUILTIN_ICON_FONT);
 LV_FONT_DECLARE(font_awesome_30_4);
 
-namespace {
-constexpr int kUserTranscriptWidth = 280;
-constexpr int kUserTranscriptZoom  = 220;
-}  // namespace
-
 // Have to register themes, so the asset apply can update the text font
 void StackChanAvatarDisplay::InitializeLcdThemes()
 {
@@ -215,10 +210,6 @@ StackChanAvatarDisplay::~StackChanAvatarDisplay()
     if (listening_indicator_ != nullptr) {
         lv_obj_del(listening_indicator_);
     }
-    if (user_transcript_label_ != nullptr) {
-        lv_obj_del(user_transcript_label_);
-    }
-
     auto& stackchan = GetStackChan();
     if (stackchan.hasAvatar()) {
         stackchan.resetAvatar();
@@ -305,22 +296,6 @@ void StackChanAvatarDisplay::SetupUI()
     lv_obj_set_style_shadow_width(listening_indicator_, 0, 0);
     lv_obj_add_flag(listening_indicator_, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(listening_indicator_);
-
-    user_transcript_label_ = lv_label_create(lv_screen_active());
-    lv_obj_set_width(user_transcript_label_, kUserTranscriptWidth);
-    lv_obj_align(user_transcript_label_, LV_ALIGN_TOP_MID, 0, 8);
-    lv_label_set_long_mode(user_transcript_label_, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(user_transcript_label_, "");
-    lv_obj_set_style_text_align(user_transcript_label_, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_obj_set_style_text_color(user_transcript_label_, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_text_font(user_transcript_label_, &BUILTIN_TEXT_FONT, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(user_transcript_label_, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(user_transcript_label_, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(user_transcript_label_, 0, LV_PART_MAIN);
-    lv_obj_set_style_shadow_width(user_transcript_label_, 0, LV_PART_MAIN);
-    lv_obj_set_style_transform_zoom(user_transcript_label_, kUserTranscriptZoom, LV_PART_MAIN);
-    lv_obj_add_flag(user_transcript_label_, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(user_transcript_label_);
 
     // GetHAL().startStackChanAutoUpdate(24);
 
@@ -438,19 +413,7 @@ void StackChanAvatarDisplay::SetChatMessage(const char* role, const char* conten
 
     DisplayLockGuard lock(this);
 
-    if (strcmp(role, "user") == 0) {
-        if (user_transcript_label_ == nullptr) {
-            return;
-        }
-        if (content != nullptr && content[0] != '\0') {
-            lv_label_set_text(user_transcript_label_, content);
-            lv_obj_remove_flag(user_transcript_label_, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_move_foreground(user_transcript_label_);
-        } else {
-            lv_label_set_text(user_transcript_label_, "");
-            lv_obj_add_flag(user_transcript_label_, LV_OBJ_FLAG_HIDDEN);
-        }
-    } else if (strcmp(role, "system") == 0) {
+    if (strcmp(role, "system") == 0) {
         stackchan.avatar().setSpeech(content);
     } else if (strcmp(role, "assistant") == 0) {
         stackchan.avatar().setSpeech(content);
@@ -467,11 +430,6 @@ void StackChanAvatarDisplay::ClearChatMessages()
     DisplayLockGuard lock(this);
 
     stackchan.avatar().clearSpeech();
-    if (user_transcript_label_ != nullptr) {
-        lv_label_set_text(user_transcript_label_, "");
-        lv_obj_add_flag(user_transcript_label_, LV_OBJ_FLAG_HIDDEN);
-    }
-
     ESP_LOGI(TAG, "Chat messages cleared");
 }
 
