@@ -190,7 +190,7 @@ def test_should_end_conversation_does_not_end_on_polite_closing_when_llm_detecti
     assert asyncio.run(should_end_conversation([], "お疲れ様でした。")) is False
 
 
-def test_send_startup_greeting_does_not_request_idle_after_tts(monkeypatch: pytest.MonkeyPatch):
+def test_send_startup_greeting_requests_idle_after_tts(monkeypatch: pytest.MonkeyPatch):
     session = BridgeSession(websocket=None)  # type: ignore[arg-type]
     sent_payloads = []
 
@@ -217,26 +217,35 @@ def test_send_startup_greeting_does_not_request_idle_after_tts(monkeypatch: pyte
 
     asyncio.run(session.send_startup_greeting())
 
-    assert not any(
+    assert any(
         payload.get("type") == "system" and payload.get("command") == "idle_after_tts"
         for payload in sent_payloads
     )
     assert sent_payloads[-1] == {"type": "tts", "state": "stop"}
 
 
-def test_trigger_manual_speech_does_not_request_idle_after_tts(monkeypatch: pytest.MonkeyPatch):
+def test_trigger_manual_speech_marks_idle_after_tts(monkeypatch: pytest.MonkeyPatch):
     session = BridgeSession(websocket=None)  # type: ignore[arg-type]
-    spawned = []
+    recorded = {}
+
+    async def fake_cancel_response():
+        return None
+
+    async def fake_respond(text: str, from_stt: bool):
+        recorded["text"] = text
+        recorded["from_stt"] = from_stt
 
     def fake_spawn_response(coro):
-        spawned.append(coro)
-        coro.close()
+        asyncio.run(coro)
 
+    monkeypatch.setattr(session, "cancel_response", fake_cancel_response)
+    monkeypatch.setattr(session, "respond", fake_respond)
     monkeypatch.setattr(session, "spawn_response", fake_spawn_response)
 
     session.trigger_manual_speech("こんにちは")
 
-    assert len(spawned) == 1
+    assert session.pending_idle_after_tts is True
+    assert recorded == {"text": "こんにちは", "from_stt": False}
 
 
 def test_resolve_bridge_host_prefers_request_host(monkeypatch: pytest.MonkeyPatch):

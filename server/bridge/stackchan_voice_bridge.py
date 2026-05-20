@@ -418,6 +418,7 @@ class BridgeSession:
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     audio_packet_count: int = 0
     pending_end_conversation: bool = False
+    pending_idle_after_tts: bool = False
     closed: bool = False
 
     async def send_json(self, payload: dict[str, Any]) -> None:
@@ -505,6 +506,7 @@ class BridgeSession:
     def trigger_manual_speech(self, text: str) -> None:
         async def runner() -> None:
             await self.cancel_response()
+            self.pending_idle_after_tts = True
             await self.respond(text, from_stt=False)
 
         self.spawn_response(runner())
@@ -562,6 +564,7 @@ class BridgeSession:
         text = sanitize_startup_greeting(raw_text) or "ふふ、起きたよ。"
         logger.info("session=%s startup_raw=%r", self.session_id, raw_text)
         logger.info("session=%s startup_text=%r", self.session_id, text)
+        self.pending_idle_after_tts = True
         await self.respond(text, from_stt=True)
 
     async def respond(self, text: str, from_stt: bool) -> None:
@@ -587,6 +590,9 @@ class BridgeSession:
         if self.pending_end_conversation:
             await self.send_json({"type": "system", "command": "end_conversation"})
             self.pending_end_conversation = False
+        elif self.pending_idle_after_tts:
+            await self.send_json({"type": "system", "command": "idle_after_tts"})
+            self.pending_idle_after_tts = False
         await self.send_json({"type": "tts", "state": "stop"})
 
 
