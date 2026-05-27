@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <style>
+      .bg{fill:#fff}.ink{fill:#172026}.muted{fill:#61707b}.teal{fill:#0f8b8d}.orange{fill:#d86f19}.green{fill:#27844a}.red{fill:#b64040}.blue{fill:#315f9f}
+      .panel{fill:#f7f9fb;stroke:#cfd7dd;stroke-width:2}.panel2{fill:#eef8f8;stroke:#0f8b8d;stroke-width:3}.warnbox{fill:#fff7ed;stroke:#d86f19;stroke-width:3}
+      .h1{font:800 42px -apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif}.h2{font:800 24px -apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif}
+      .body{font:500 18px -apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif}.small{font:500 15px -apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif}.mono{font:600 15px ui-monospace,SFMono-Regular,Menlo,monospace}
+      .num{font:800 22px -apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;fill:#fff}
+      .wave{fill:none;stroke-width:3;stroke-linejoin:round}.thin{stroke-width:2}.dash{stroke-dasharray:10 8}
+    </style>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="4" orient="auto">
+      <path d="M0,0 L0,8 L12,4 z" fill="#172026"/>
+    </marker>
+    <linearGradient id="weakBeam" x1="0" x2="1">
+      <stop offset="0" stop-color="#ff7f1f" stop-opacity=".65"/>
+      <stop offset="1" stop-color="#ff7f1f" stop-opacity=".05"/>
+    </linearGradient>
+    <linearGradient id="strongBeam" x1="0" x2="1">
+      <stop offset="0" stop-color="#2f9e44" stop-opacity=".65"/>
+      <stop offset="1" stop-color="#2f9e44" stop-opacity=".08"/>
+    </linearGradient>
+  </defs>
+  <rect class="bg" width="1600" height="900"/>
+  <text x="60" y="58" class="h1">StackChanでHITACHIエアコンIR制御: なぜ「スニッフ再送」だけではだめだったか</text>
+  <text x="62" y="92" class="body muted">leader/headerは合っていた。でもHITACHI_AC424は長い状態フレーム。最後は物理IR出力も効いた。</text>
+
+  <g transform="translate(54,125)">
+    <rect class="panel2" width="350" height="220" rx="10"/>
+    <circle cx="35" cy="35" r="20" class="teal"/><text x="28" y="43" class="num">1</text>
+    <text x="68" y="42" class="h2 teal">スニッフraw</text>
+    <text x="26" y="78" class="body ink">先頭はHITACHIらしい</text>
+    <text x="26" y="108" class="small muted">leader: 29749 / 49320 usec</text>
+    <text x="26" y="133" class="small muted">header: 3382 / 1644 usec</text>
+    <text x="26" y="158" class="small muted">payload: 370 bit-ish</text>
+    <text x="26" y="186" class="small red">末尾欠落・ジッタ・ノイズ混入</text>
+  </g>
+  <line x1="420" y1="235" x2="455" y2="235" stroke="#172026" stroke-width="5" marker-end="url(#arrow)"/>
+  <g transform="translate(470,125)">
+    <rect class="panel2" width="350" height="220" rx="10"/>
+    <circle cx="35" cy="35" r="20" class="teal"/><text x="28" y="43" class="num">2</text>
+    <text x="68" y="42" class="h2 teal">HITACHI_AC424</text>
+    <text x="26" y="78" class="body ink">短いボタンコードではない</text>
+    <text x="26" y="108" class="small muted">53 bytes = 424 bits</text>
+    <text x="26" y="133" class="small muted">温度・運転モード・風量・電源</text>
+    <text x="26" y="158" class="small muted">各byteの反転ペアも必要</text>
+    <text x="26" y="186" class="small orange">状態フレームとして再構築が必要</text>
+  </g>
+  <line x1="836" y1="235" x2="871" y2="235" stroke="#172026" stroke-width="5" marker-end="url(#arrow)"/>
+  <g transform="translate(886,125)">
+    <rect class="panel2" width="350" height="220" rx="10"/>
+    <circle cx="35" cy="35" r="20" class="teal"/><text x="28" y="43" class="num">3</text>
+    <text x="68" y="42" class="h2 teal">ライブラリ生成</text>
+    <text x="26" y="78" class="body ink">解析済み知見で安定化</text>
+    <text x="26" y="108" class="small muted">IRremoteESP8266 / ESPHome 相当</text>
+    <text x="26" y="133" class="small muted">mark 463 / 0 space 372 / 1 space 1208</text>
+    <text x="26" y="158" class="small muted">LSB-firstで424bitを生成</text>
+    <text x="26" y="186" class="small green">論理層はこれで通った</text>
+  </g>
+  <line x1="1252" y1="235" x2="1287" y2="235" stroke="#172026" stroke-width="5" marker-end="url(#arrow)"/>
+  <g transform="translate(1302,125)">
+    <rect class="warnbox" width="244" height="220" rx="10"/>
+    <circle cx="35" cy="35" r="20" class="orange"/><text x="28" y="43" class="num">4</text>
+    <text x="68" y="42" class="h2 orange">物理層</text>
+    <text x="24" y="78" class="body ink">光で届くか</text>
+    <text x="24" y="108" class="small muted">StackChan内蔵IRは近距離向け</text>
+    <text x="24" y="133" class="small muted">純正リモコンは大出力</text>
+    <text x="24" y="158" class="small muted">複数LED・指向性・ドライバ</text>
+    <text x="24" y="186" class="small orange">近づけると動く = 光量不足</text>
+  </g>
+
+  <g transform="translate(54,385)">
+    <rect class="panel" width="1492" height="210" rx="10"/>
+    <text x="24" y="38" class="h2 ink">波形の違い</text>
+    <text x="24" y="78" class="body teal">スニッフraw</text>
+    <text x="24" y="104" class="small orange">370 bit-ish</text>
+    <path class="wave blue" d="M170 94 v-28 h9 v28 h13 v-28 h9 v28 h16 v-28 h9 v28 h12 v-28 h9 v28 h18 v-28 h9 v28 h12 v-28 h9 v28 h14 v-28 h9 v28 h12 v-28 h9 v28 h18 v-28 h9 v28 h14 v-28 h9 v28 h20 v-28 h9 v28 h13 v-28 h9 v28"/>
+    <path class="wave orange" d="M540 94 v-28 h8 v28 h14 v-28 h8 v28 h17 v-28 h8 v28 h10 v-28 h8 v28 h16 v-28 h8 v28 h12 v-28 h8 v28 h16 v-28 h8 v28 h12 v-28 h8 v28 h18 v-28 h8 v28 h12 v-28 h8 v28"/>
+    <path class="wave red dash" d="M880 94 v-28 h8 v28 h80 v-28 h8 v28 h65 v-28 h8 v28"/>
+    <text x="220" y="42" class="small muted">leader/headerは合う</text>
+    <text x="600" y="42" class="small muted">payloadにジッタ</text>
+    <text x="900" y="42" class="small red">末尾不足/ノイズ</text>
+
+    <text x="24" y="160" class="body green">生成raw</text>
+    <text x="24" y="186" class="small green">424 bits</text>
+    <path class="wave blue" d="M170 176 v-28 h9 v28 h13 v-28 h9 v28 h16 v-28 h9 v28 h12 v-28 h9 v28 h18 v-28 h9 v28 h12 v-28 h9 v28 h14 v-28 h9 v28 h12 v-28 h9 v28 h18 v-28 h9 v28"/>
+    <path class="wave green" d="M470 176 v-28 h8 v28 h18 v-28 h8 v28 h14 v-28 h8 v28 h18 v-28 h8 v28 h14 v-28 h8 v28 h18 v-28 h8 v28 h14 v-28 h8 v28 h18 v-28 h8 v28 h14 v-28 h8 v28 h18 v-28 h8 v28 h14 v-28 h8 v28 h18 v-28 h8 v28 h14 v-28 h8 v28 h18 v-28 h8 v28 h14 v-28 h8 v28 h18 v-28 h8 v28 h14 v-28 h8 v28 h18 v-28 h8 v28 h14 v-28 h8 v28"/>
+    <text x="640" y="138" class="small green">53 bytes = 424 bits を正規化して最後まで送る</text>
+  </g>
+
+  <g transform="translate(54,625)">
+    <rect class="panel" width="700" height="190" rx="10"/>
+    <text x="24" y="38" class="h2 ink">失敗要因の分解</text>
+    <text x="24" y="76" class="body ink">1. 受信rawは復号材料で、完成した送信データではない</text>
+    <text x="24" y="108" class="body ink">2. HITACHI_AC424は状態全体を送る長フレーム</text>
+    <text x="24" y="140" class="body ink">3. 欠落・ジッタ・ノイズを正規化しないと壊れる</text>
+    <text x="24" y="172" class="body ink">4. 論理が合っても、光量不足ならエアコンに届かない</text>
+  </g>
+
+  <g transform="translate(790,625)">
+    <rect class="panel" width="756" height="190" rx="10"/>
+    <text x="24" y="38" class="h2 ink">距離と光量</text>
+    <rect x="34" y="86" width="78" height="54" rx="8" fill="#e2f4e8" stroke="#27844a" stroke-width="2"/>
+    <text x="44" y="119" class="small ink">StackChan</text>
+    <polygon points="122,113 445,72 445,154" fill="url(#weakBeam)"/>
+    <line x1="122" y1="113" x2="445" y2="113" stroke="#d86f19" stroke-width="3" stroke-dasharray="8 6"/>
+    <rect x="445" y="88" width="92" height="50" rx="8" fill="#eef2f4" stroke="#cfd7dd" stroke-width="2"/>
+    <text x="458" y="119" class="small ink">受光部</text>
+    <text x="210" y="66" class="small orange">近距離ならしきい値超え</text>
+
+    <rect x="34" y="154" width="98" height="26" rx="6" fill="#fff1df" stroke="#d86f19" stroke-width="2"/>
+    <text x="44" y="173" class="small ink">純正リモコン</text>
+    <polygon points="142,167 710,126 710,190" fill="url(#strongBeam)"/>
+    <line x1="142" y1="167" x2="710" y2="167" stroke="#27844a" stroke-width="4"/>
+    <text x="285" y="151" class="small green">大電流パルス + 複数LED + 指向性</text>
+  </g>
+
+  <text x="58" y="860" class="body teal">まとめ: GPTが波形だけで悩んだ箇所は、実際には「プロトコル復号/状態生成」と「IR光量」の複合問題。ライブラリで論理層を固定し、近距離動作で物理層の制約が見えた。</text>
+</svg>

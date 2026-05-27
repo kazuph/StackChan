@@ -34,6 +34,7 @@ void Hal::init()
 
     xiaozhi_board_init();
     xiaozhi_mcp_init();
+    startIrSniff();
     head_touch_init();
     io_expander_init();
     rtc_init();

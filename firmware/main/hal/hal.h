@@ -267,6 +267,11 @@ public:
     bool espNowSend(const std::vector<uint8_t>& data, const uint8_t* destAddr = nullptr);
     void setLaserEnabled(bool enabled);
 
+    /* ------------------------------------ IR ---------------------------------- */
+    bool sendIrRaw(const std::vector<uint32_t>& timingsUsec, uint32_t carrierHz = 38000);
+    bool testIrGpioBlink(bool activeLow = false, int pulses = 10, int onMs = 120, int offMs = 120);
+    void startIrSniff();
+
     /* ------------------------------- Warm Reboot ------------------------------ */
     void requestWarmReboot(int appIndex);
     int getWarmRebootTarget();

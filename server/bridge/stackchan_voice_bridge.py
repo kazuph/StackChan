@@ -422,10 +422,12 @@ class BridgeSession:
     response_task: asyncio.Task | None = None
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     audio_packet_count: int = 0
+    mcp_next_id: int = 1
     pending_end_conversation: bool = False
     pending_idle_after_tts: bool = False
     consecutive_no_input_count: int = 0
     closed: bool = False
+    mcp_pending: dict[str, asyncio.Future] = field(default_factory=dict)
 
     async def send_json(self, payload: dict[str, Any]) -> None:
         if self.closed:
@@ -448,6 +450,39 @@ class BridgeSession:
                 await self.websocket.send_bytes(payload)
             except (WebSocketDisconnect, RuntimeError):
                 self.closed = True
+
+    async def call_mcp(self, request: dict[str, Any], timeout: float) -> dict[str, Any]:
+        if self.closed:
+            raise HTTPException(status_code=409, detail="no active device session")
+        request_id = request.get("id")
+        if request_id is None:
+            request_id = self.mcp_next_id
+            self.mcp_next_id = 1 if self.mcp_next_id >= 2_000_000_000 else self.mcp_next_id + 1
+        request = dict(request)
+        request["id"] = request_id
+        request.setdefault("jsonrpc", "2.0")
+        pending_key = str(request_id)
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        self.mcp_pending[pending_key] = future
+        try:
+            await self.send_json({"type": "mcp", "payload": request})
+            return await asyncio.wait_for(future, timeout=timeout)
+        except asyncio.TimeoutError as exc:
+            raise HTTPException(status_code=504, detail="mcp request timed out") from exc
+        finally:
+            self.mcp_pending.pop(pending_key, None)
+
+    def handle_mcp_response(self, payload: dict[str, Any]) -> None:
+        response_id = payload.get("id")
+        if response_id is None:
+            logger.info("session=%s mcp_notification payload=%s", self.session_id, payload)
+            return
+        future = self.mcp_pending.get(str(response_id))
+        if future is None or future.done():
+            logger.info("session=%s mcp_unmatched_response id=%s payload=%s", self.session_id, response_id, payload)
+            return
+        future.set_result(payload)
 
     async def send_audio_stream(self, packets: list[bytes]) -> None:
         if not packets:
@@ -667,6 +702,53 @@ async def speak(payload: dict[str, Any]):
     return {"status": "queued", "session_id": session.session_id, "text": text}
 
 
+def require_active_session() -> BridgeSession:
+    session = active_session
+    if session is None or session.closed:
+        raise HTTPException(status_code=409, detail="no active device session")
+    return session
+
+
+@app.post("/mcp/list")
+async def mcp_list(payload: dict[str, Any] | None = None):
+    session = require_active_session()
+    payload = payload or {}
+    timeout = float(payload.get("timeout", 10.0))
+    params: dict[str, Any] = {}
+    cursor = payload.get("cursor")
+    if cursor:
+        params["cursor"] = str(cursor)
+    return await session.call_mcp(
+        {
+            "method": "tools/list",
+            "params": params,
+        },
+        timeout=timeout,
+    )
+
+
+@app.post("/mcp/call")
+async def mcp_call(payload: dict[str, Any]):
+    session = require_active_session()
+    name = str(payload.get("name", "")).strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    arguments = payload.get("arguments", {})
+    if not isinstance(arguments, dict):
+        raise HTTPException(status_code=400, detail="arguments must be an object")
+    timeout = float(payload.get("timeout", 10.0))
+    return await session.call_mcp(
+        {
+            "method": "tools/call",
+            "params": {
+                "name": name,
+                "arguments": arguments,
+            },
+        },
+        timeout=timeout,
+    )
+
+
 @app.websocket("/xiaozhi/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -728,15 +810,11 @@ async def websocket_endpoint(websocket: WebSocket):
                 logger.info("session=%s abort", session.session_id)
                 await session.cancel_response()
             elif message_type == "mcp":
-                await session.send_json(
-                    {
-                        "type": "mcp",
-                        "payload": {
-                            "type": "error",
-                            "message": "MCP bridge is not implemented yet.",
-                        },
-                    }
-                )
+                mcp_payload = payload.get("payload")
+                if isinstance(mcp_payload, dict):
+                    session.handle_mcp_response(mcp_payload)
+                else:
+                    logger.info("session=%s invalid_mcp_payload payload=%s", session.session_id, payload)
     except asyncio.TimeoutError:
         logger.warning("session=%s hello_timeout", session.session_id)
     except (WebSocketDisconnect, RuntimeError):

@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StackChan HITACHI IR Analysis</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172026;
+      --muted: #61707b;
+      --line: #cfd7dd;
+      --panel: #f7f9fb;
+      --paper: #ffffff;
+      --accent: #0f8b8d;
+      --warn: #d86f19;
+      --bad: #b64040;
+      --good: #27844a;
+      --blue: #315f9f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Yu Gothic", sans-serif;
+      color: var(--ink);
+      background: #eef3f6;
+      line-height: 1.65;
+    }
+    main {
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 28px 22px 56px;
+    }
+    header {
+      padding: 28px 0 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 34px;
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+    h2 {
+      margin: 34px 0 12px;
+      font-size: 22px;
+      letter-spacing: 0;
+    }
+    h3 {
+      margin: 18px 0 8px;
+      font-size: 16px;
+      letter-spacing: 0;
+    }
+    p { margin: 8px 0; }
+    .lead {
+      font-size: 18px;
+      max-width: 900px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 16px;
+    }
+    .card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .span-4 { grid-column: span 4; }
+    .span-6 { grid-column: span 6; }
+    .span-8 { grid-column: span 8; }
+    .span-12 { grid-column: span 12; }
+    .tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #e4f3f3;
+      color: #096366;
+      font-weight: 700;
+      font-size: 12px;
+    }
+    .metric {
+      font-size: 30px;
+      font-weight: 800;
+      line-height: 1.1;
+    }
+    .muted { color: var(--muted); }
+    .good { color: var(--good); }
+    .warn { color: var(--warn); }
+    .bad { color: var(--bad); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #edf4f7; }
+    tr:last-child td { border-bottom: 0; }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+      background: #eef2f4;
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    .diagram {
+      width: 100%;
+      height: auto;
+      display: block;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .note {
+      border-left: 4px solid var(--accent);
+      padding: 10px 12px;
+      background: #eef8f8;
+      border-radius: 0 8px 8px 0;
+    }
+    .source-list a { color: var(--blue); }
+    @media (max-width: 820px) {
+      h1 { font-size: 27px; }
+      .span-4, .span-6, .span-8 { grid-column: span 12; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <span class="tag">StackChan / HITACHI AC / IR</span>
+      <h1>なぜ「スニッフした波形をそのまま送る」だけでは勝てなかったのか</h1>
+      <p class="lead">結論: 受信波形は HITACHI_AC424 らしい先頭形状を持っていたが、キャプチャ終端の欠落・ジッタ・ノイズ混入・状態フレーム生成の不足・送信光量不足が重なった。解析済みライブラリの状態生成を使うと論理層は通り、最後に残ったのは物理層のIR出力だった。</p>
+    </header>
+
+    <section>
+      <h2>今回の最短結論</h2>
+      <div class="grid">
+        <div class="card span-4">
+          <div class="metric bad">370 / 424</div>
+          <p><strong>スニッフ波形の復号可能ビット相当</strong></p>
+          <p class="muted">有効キャプチャの leader/header は近いが、後半まで見ると 424bit 完走に足りない捕捉があった。</p>
+        </div>
+        <div class="card span-4">
+          <div class="metric good">424 / 424</div>
+          <p><strong>生成波形のビット数</strong></p>
+          <p class="muted">ESPHome / IRremoteESP8266 の HITACHI_AC424 相当の状態生成で、53 bytes = 424 bits を安定生成。</p>
+        </div>
+        <div class="card span-4">
+          <div class="metric warn">近距離必須</div>
+          <p><strong>最後に残った制約</strong></p>
+          <p class="muted">StackChan内蔵IR送信はGPIO5の単発送信LED。家電リモコン級の光量・指向性ではない。</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>波形比較</h2>
+      <svg class="diagram" viewBox="0 0 1120 470" role="img" aria-label="Sniffed raw waveform compared with generated HITACHI AC424 waveform">
+        <defs>
+          <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="#315f9f"></path>
+          </marker>
+        </defs>
+        <rect x="0" y="0" width="1120" height="470" fill="#fff"></rect>
+        <text x="34" y="40" font-size="22" font-weight="700" fill="#172026">受信rawとライブラリ生成rawの比較</text>
+        <text x="34" y="68" font-size="14" fill="#61707b">横軸は概念図。leader/header は一致、payload 後半の完全性と正規化で差が出る。</text>
+
+        <text x="34" y="118" font-size="16" font-weight="700" fill="#172026">Sniffed raw</text>
+        <rect x="150" y="96" width="180" height="38" fill="#d9edf7" stroke="#315f9f"></rect>
+        <rect x="340" y="96" width="70" height="38" fill="#d9edf7" stroke="#315f9f"></rect>
+        <rect x="420" y="96" width="455" height="38" fill="#fff1df" stroke="#d86f19"></rect>
+        <rect x="885" y="96" width="145" height="38" fill="#f7dddd" stroke="#b64040"></rect>
+        <text x="184" y="120" font-size="13" fill="#172026">leader 約29.7ms / 49.3ms</text>
+        <text x="348" y="120" font-size="13" fill="#172026">header</text>
+        <text x="545" y="120" font-size="13" fill="#172026">payload: ジッタあり、370bit-ish</text>
+        <text x="905" y="120" font-size="13" fill="#172026">末尾不足/ノイズ</text>
+
+        <text x="34" y="196" font-size="16" font-weight="700" fill="#172026">Generated raw</text>
+        <rect x="150" y="174" width="180" height="38" fill="#d9edf7" stroke="#315f9f"></rect>
+        <rect x="340" y="174" width="70" height="38" fill="#d9edf7" stroke="#315f9f"></rect>
+        <rect x="420" y="174" width="610" height="38" fill="#e2f4e8" stroke="#27844a"></rect>
+        <text x="184" y="198" font-size="13" fill="#172026">leader 29784 / 49290</text>
+        <text x="348" y="198" font-size="13" fill="#172026">header</text>
+        <text x="610" y="198" font-size="13" fill="#172026">payload: 53 bytes = 424 bits, 正規化済み</text>
+
+        <line x1="240" y1="142" x2="240" y2="164" stroke="#315f9f" stroke-width="2" marker-end="url(#arrow)"></line>
+        <line x1="375" y1="142" x2="375" y2="164" stroke="#315f9f" stroke-width="2" marker-end="url(#arrow)"></line>
+        <line x1="650" y1="142" x2="720" y2="164" stroke="#d86f19" stroke-width="2" marker-end="url(#arrow)"></line>
+        <line x1="955" y1="142" x2="955" y2="164" stroke="#b64040" stroke-width="2" marker-end="url(#arrow)"></line>
+
+        <rect x="34" y="252" width="245" height="142" rx="8" fill="#f7f9fb" stroke="#cfd7dd"></rect>
+        <text x="54" y="282" font-size="15" font-weight="700" fill="#172026">1. 先頭は合っていた</text>
+        <text x="54" y="310" font-size="13" fill="#61707b">leader/header が HITACHI_AC424 に近い。</text>
+        <text x="54" y="335" font-size="13" fill="#61707b">だから「何かは受けている」は正しい。</text>
+
+        <rect x="304" y="252" width="245" height="142" rx="8" fill="#f7f9fb" stroke="#cfd7dd"></rect>
+        <text x="324" y="282" font-size="15" font-weight="700" fill="#172026">2. 後半が弱い</text>
+        <text x="324" y="310" font-size="13" fill="#61707b">長いエアコンフレームは末尾まで重要。</text>
+        <text x="324" y="335" font-size="13" fill="#61707b">部分一致ではエアコンは動かない。</text>
+
+        <rect x="574" y="252" width="245" height="142" rx="8" fill="#f7f9fb" stroke="#cfd7dd"></rect>
+        <text x="594" y="282" font-size="15" font-weight="700" fill="#172026">3. 状態生成が必要</text>
+        <text x="594" y="310" font-size="13" fill="#61707b">ON/OFFは単発コードではなく状態。</text>
+        <text x="594" y="335" font-size="13" fill="#61707b">温度、モード、ファン、反転byteを含む。</text>
+
+        <rect x="844" y="252" width="245" height="142" rx="8" fill="#f7f9fb" stroke="#cfd7dd"></rect>
+        <text x="864" y="282" font-size="15" font-weight="700" fill="#172026">4. 物理出力も足りない</text>
+        <text x="864" y="310" font-size="13" fill="#61707b">論理が正しくても光量不足だと届かない。</text>
+        <text x="864" y="335" font-size="13" fill="#61707b">近づけると動いたのはこの証拠。</text>
+      </svg>
+    </section>
+
+    <section>
+      <h2>数値で見た差分</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>項目</th>
+            <th>スニッフ有効キャプチャ</th>
+            <th>ライブラリ生成</th>
+            <th>意味</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>durations数</td>
+            <td>745</td>
+            <td>854</td>
+            <td>生成側は 4 + 424*2 + 2。スニッフ側は短く、完全な状態フレームとしては足りない。</td>
+          </tr>
+          <tr>
+            <td>leader</td>
+            <td>29749, 49320</td>
+            <td>29784, 49290</td>
+            <td>ここはほぼ一致。プロトコル候補の同定には十分。</td>
+          </tr>
+          <tr>
+            <td>header</td>
+            <td>3382, 1644</td>
+            <td>3416, 1604</td>
+            <td>ここも一致範囲。問題の中心ではない。</td>
+          </tr>
+          <tr>
+            <td>payload bit相当</td>
+            <td>370 bit-ish</td>
+            <td>424 bit</td>
+            <td>HITACHI_AC424 は 53 bytes = 424 bits。末尾まで揃わないと状態として成立しない。</td>
+          </tr>
+          <tr>
+            <td>mark平均</td>
+            <td>415.3 usec</td>
+            <td>463 usec</td>
+            <td>受信モジュールのデジタル出力、割り込み取得、しきい値で縮む/揺れる。正規化が必要。</td>
+          </tr>
+          <tr>
+            <td>0 / 1 space平均</td>
+            <td>416.8 / 1259.6 usec</td>
+            <td>372 / 1208 usec</td>
+            <td>判別はできるが、長フレームの途中でゆらぎや欠落が出ると復元に失敗する。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>なぜスニッフ再送だけではだめだったか</h2>
+      <div class="grid">
+        <div class="card span-6">
+          <h3>HITACHIエアコンは「ボタンコード」ではなく「状態フレーム」</h3>
+          <p>テレビのNECコードのような短いコマンドではなく、電源、温度、運転モード、風量、各byteの反転ペアを含む長い状態を送る。だから、1箇所でも欠けると「ONっぽい何か」ではなく「壊れた状態フレーム」になる。</p>
+        </div>
+        <div class="card span-6">
+          <h3>受信rawは「復号の材料」であって完成品ではない</h3>
+          <p>今回の受信ログは leader/header から HITACHI_AC424 らしさは見える。ただし、受信モジュールの出力はキャリアを消した後のエッジ列であり、ジッタ、末尾欠落、短いノイズ捕捉が混じる。そのまま再送するより、プロトコルとして復号してから再生成する方が強い。</p>
+        </div>
+        <div class="card span-6">
+          <h3>ライブラリが勝った理由</h3>
+          <p>使用した知見は <code>IRremoteESP8266</code> / ESPHome の <code>HITACHI_AC424</code> 相当。実装では <code>swiftbar/stackchan_action.py</code> に 53 bytes のベース状態、温度・モード・風量・電源byte、反転byte再計算、LSB-first raw生成を移植した。</p>
+        </div>
+        <div class="card span-6">
+          <h3>最後は光量の問題</h3>
+          <p>生成rawで動いたのに近距離必須だったので、論理層は通っている。残りは送信LEDの光量、指向性、駆動電流、配置。メーカー純正リモコンが大きいIR LEDや複数LED、専用ドライバを持つ理由がここ。</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>StackChan IRハードウェア情報</h2>
+      <table>
+        <tbody>
+          <tr>
+            <th>送信ピン</th>
+            <td><code>GPIO5 / IR_SEND</code>。公式PinMapでも G5 が IR_SEND。今回のfirmware実装も <code>IR_SEND_GPIO GPIO_NUM_5</code>。</td>
+          </tr>
+          <tr>
+            <th>受信ピン</th>
+            <td><code>GPIO10 / IR_REC</code>。公式PinMapでも G10 が IR_REC。</td>
+          </tr>
+          <tr>
+            <th>受信部品</th>
+            <td><code>IRM56384</code>。公式仕様とTouch基板回路図に記載あり。38kHz系の赤外線リモコン受信モジュール。</td>
+          </tr>
+          <tr>
+            <th>送信LED型番</th>
+            <td><strong>公開資料上は個別型番未記載。</strong> 公式仕様は「infrared transmitter」とだけ記載。公開回路図テキスト抽出でも送信LEDの具体型番・順方向電流・放射強度は確認できなかった。</td>
+          </tr>
+          <tr>
+            <th>今回の送信設定</th>
+            <td>ESP-IDF RMT、38kHz carrier、duty 33%、active-high、raw duration最大1200要素。</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="note">実務上の判断: StackChan内蔵IRは「近距離なら家電制御できる」レベル。部屋全体へ飛ばすなら、外付けIRブラスター、トランジスタ/MOSFET駆動、複数LED、適切な照射角の設計が必要。</p>
+    </section>
+
+    <section>
+      <h2>物理層の図解</h2>
+      <svg class="diagram" viewBox="0 0 1120 360" role="img" aria-label="IR power and distance diagram">
+        <rect x="0" y="0" width="1120" height="360" fill="#fff"></rect>
+        <text x="34" y="40" font-size="22" font-weight="700" fill="#172026">純正リモコンがごつい理由</text>
+        <text x="34" y="68" font-size="14" fill="#61707b">プロトコルが正しくても、受光部に届く光子数が足りないとエアコンは無反応。</text>
+        <rect x="65" y="135" width="110" height="76" rx="8" fill="#e2f4e8" stroke="#27844a"></rect>
+        <text x="83" y="167" font-size="15" font-weight="700" fill="#172026">StackChan</text>
+        <text x="83" y="190" font-size="13" fill="#61707b">小型IR LED</text>
+        <path d="M190 173 C300 126, 390 126, 500 173" fill="none" stroke="#d86f19" stroke-width="5" opacity="0.35"></path>
+        <path d="M190 173 C310 154, 400 154, 500 173" fill="none" stroke="#d86f19" stroke-width="3" opacity="0.6"></path>
+        <text x="290" y="118" font-size="13" fill="#d86f19">近距離なら到達</text>
+        <rect x="500" y="130" width="170" height="86" rx="8" fill="#eef2f4" stroke="#cfd7dd"></rect>
+        <text x="530" y="166" font-size="15" font-weight="700" fill="#172026">エアコン受光部</text>
+        <text x="530" y="190" font-size="13" fill="#61707b">しきい値未満は無視</text>
+
+        <rect x="65" y="260" width="110" height="54" rx="8" fill="#fff1df" stroke="#d86f19"></rect>
+        <text x="82" y="293" font-size="14" font-weight="700" fill="#172026">純正リモコン</text>
+        <path d="M190 287 C350 220, 535 220, 690 287" fill="none" stroke="#27844a" stroke-width="10" opacity="0.35"></path>
+        <path d="M190 287 C365 250, 520 250, 690 287" fill="none" stroke="#27844a" stroke-width="5" opacity="0.75"></path>
+        <text x="340" y="240" font-size="13" fill="#27844a">大電流パルス + 指向性 + 複数LEDで余裕</text>
+        <rect x="690" y="250" width="170" height="74" rx="8" fill="#eef2f4" stroke="#cfd7dd"></rect>
+        <text x="720" y="283" font-size="15" font-weight="700" fill="#172026">部屋の距離でも</text>
+        <text x="720" y="306" font-size="13" fill="#61707b">しきい値を超える</text>
+      </svg>
+    </section>
+
+    <section>
+      <h2>参考にした実装・資料</h2>
+      <ul class="source-list">
+        <li>ローカル実装: <code>swiftbar/stackchan_action.py</code> の <code>HITACHI_AC424_BASE</code> / <code>build_hitachi_ac424_raw()</code></li>
+        <li>利用したライブラリ知見: <code>IRremoteESP8266</code> の HITACHI_AC424 と ESPHome の Hitachi AC424 実装相当</li>
+        <li>公式仕様: <a href="https://docs.m5stack.com/en/StackChan">M5Stack StackChan documentation</a></li>
+        <li>公式IRサンプル: <a href="https://docs.m5stack.com/en/arduino/stackchan/ir_nec">StackChan IR Infrared Communication</a></li>
+        <li>受信部品: <a href="https://m5stack-doc.oss-cn-shenzhen.aliyuncs.com/1205/IRM56384.pdf">IRM56384 datasheet</a></li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

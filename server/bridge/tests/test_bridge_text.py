@@ -191,7 +191,7 @@ def test_should_end_conversation_does_not_end_on_polite_closing_when_llm_detecti
     assert asyncio.run(should_end_conversation([], "お疲れ様でした。")) is False
 
 
-def test_send_startup_greeting_requests_idle_after_tts(monkeypatch: pytest.MonkeyPatch):
+def test_send_startup_greeting_returns_to_idle_after_tts(monkeypatch: pytest.MonkeyPatch):
     session = BridgeSession(websocket=None)  # type: ignore[arg-type]
     sent_payloads = []
 
@@ -218,11 +218,10 @@ def test_send_startup_greeting_requests_idle_after_tts(monkeypatch: pytest.Monke
 
     asyncio.run(session.send_startup_greeting())
 
-    assert any(
-        payload.get("type") == "system" and payload.get("command") == "idle_after_tts"
-        for payload in sent_payloads
-    )
-    assert sent_payloads[-1] == {"type": "tts", "state": "stop"}
+    assert sent_payloads[-2:] == [
+        {"type": "system", "command": "idle_after_tts"},
+        {"type": "tts", "state": "stop"},
+    ]
 
 
 def test_trigger_manual_speech_marks_idle_after_tts(monkeypatch: pytest.MonkeyPatch):

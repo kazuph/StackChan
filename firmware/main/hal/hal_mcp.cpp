@@ -8,10 +8,59 @@
 #include <mcp_server.h>
 #include <stackchan/stackchan.h>
 #include <apps/common/common.h>
+#include <charconv>
+#include <string_view>
 
 using namespace stackchan;
 
 static const std::string_view _tag = "HAL-MCP";
+
+static bool parse_ir_timings(std::string_view text, std::vector<uint32_t>& timings)
+{
+    timings.clear();
+    while (!text.empty()) {
+        size_t comma = text.find(',');
+        std::string_view token = comma == std::string_view::npos ? text : text.substr(0, comma);
+        while (!token.empty() && token.front() == ' ') {
+            token.remove_prefix(1);
+        }
+        while (!token.empty() && token.back() == ' ') {
+            token.remove_suffix(1);
+        }
+        if (token.empty()) {
+            return false;
+        }
+
+        uint32_t value = 0;
+        auto result    = std::from_chars(token.data(), token.data() + token.size(), value);
+        if (result.ec != std::errc() || result.ptr != token.data() + token.size() || value == 0 || value > 200000) {
+            return false;
+        }
+        timings.push_back(value);
+
+        if (comma == std::string_view::npos) {
+            break;
+        }
+        text.remove_prefix(comma + 1);
+    }
+    return timings.size() >= 2;
+}
+
+static std::vector<uint32_t> build_nec_timings(uint16_t address, uint8_t command)
+{
+    uint32_t data = static_cast<uint32_t>(address) | (static_cast<uint32_t>(command) << 16) |
+                    (static_cast<uint32_t>(~command & 0xff) << 24);
+    std::vector<uint32_t> timings;
+    timings.reserve(67);
+    timings.push_back(9000);
+    timings.push_back(4500);
+    for (int i = 0; i < 32; ++i) {
+        timings.push_back(560);
+        timings.push_back((data & (1UL << i)) ? 1690 : 560);
+    }
+    timings.push_back(560);
+    return timings;
+}
 
 void Hal::xiaozhi_mcp_init()
 {
@@ -145,5 +194,50 @@ void Hal::xiaozhi_mcp_init()
                            mclog::tagInfo(_tag, "stop_reminder: id={}", id);
                            tools::stop_reminder(id);
                            return true;
+                       });
+
+    mclog::tagInfo(_tag, "add robot.send_ir_raw tool");
+    mcp_server.AddTool(
+        "self.robot.send_ir_raw",
+        "Send a raw infrared frame from StackChan's built-in IR LED. timings_usec is comma-separated mark/space "
+        "durations in microseconds, starting with a mark. Use this for learned air-conditioner frames.",
+        PropertyList({Property("timings_usec", kPropertyTypeString, std::string()),
+                      Property("carrier_hz", kPropertyTypeInteger, 38000, 30000, 60000)}),
+        [this](const PropertyList& properties) -> ReturnValue {
+            std::string timings_text = properties["timings_usec"].value<std::string>();
+            int carrier_hz           = properties["carrier_hz"].value<int>();
+
+            std::vector<uint32_t> timings;
+            if (!parse_ir_timings(timings_text, timings)) {
+                mclog::tagError(_tag, "send_ir_raw invalid timings");
+                return false;
+            }
+            return GetHAL().sendIrRaw(timings, static_cast<uint32_t>(carrier_hz));
+        });
+
+    mclog::tagInfo(_tag, "add robot.send_ir_nec_test tool");
+    mcp_server.AddTool("self.robot.send_ir_nec_test",
+                       "Send a short NEC-format IR test frame from StackChan's built-in IR LED. This is for verifying "
+                       "the IR transmitter path before using longer air-conditioner raw frames.",
+                       PropertyList({Property("address", kPropertyTypeInteger, 0, 0, 65535),
+                                     Property("command", kPropertyTypeInteger, 85, 0, 255)}),
+                       [this](const PropertyList& properties) -> ReturnValue {
+                           int address = properties["address"].value<int>();
+                           int command = properties["command"].value<int>();
+                           auto timings =
+                               build_nec_timings(static_cast<uint16_t>(address), static_cast<uint8_t>(command));
+                           return GetHAL().sendIrRaw(timings, 38000);
+                       });
+
+    mclog::tagInfo(_tag, "add robot.test_ir_gpio_blink tool");
+    mcp_server.AddTool("self.robot.test_ir_gpio_blink",
+                       "Directly blink StackChan's IR LED GPIO without RMT carrier. Use a phone camera to verify "
+                       "whether the IR LED physically emits light.",
+                       PropertyList({Property("active_low", kPropertyTypeBoolean, false),
+                                     Property("pulses", kPropertyTypeInteger, 10, 1, 50)}),
+                       [this](const PropertyList& properties) -> ReturnValue {
+                           bool active_low = properties["active_low"].value<bool>();
+                           int pulses      = properties["pulses"].value<int>();
+                           return GetHAL().testIrGpioBlink(active_low, pulses, 160, 160);
                        });
 }
