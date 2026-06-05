@@ -83,6 +83,14 @@ STARTUP_GREETING_PROMPT = (
     "明るく、少し茶目っ気があり、読み上げやすい文だけを返してください。"
     "Markdown、説明、括弧書き、思考過程は不要です。"
 )
+IR_EVENT_PROMPT = (
+    "あなたはスタックちゃんです。エアコンの赤外線リモコン解析結果を見て、"
+    "家の中で自然に聞こえる短いひとことを日本語で1文だけ返してください。"
+    "メーカー名、プロトコル名、英字、解析という単語は言わないでください。"
+    "運転オフ、冷房、暖房、除湿、自動、送風、温度、風量が分かる時だけ、その操作内容に触れてください。"
+    "例: 冷房を26度にしたよ。 暖房に切り替えたよ。 風量を自動にしたよ。"
+    "Markdown、説明、括弧書き、思考過程は不要です。"
+)
 END_CONVERSATION_PROMPT = (
     "あなたは音声会話の終了判定器です。"
     "ユーザーが会話終了の意思を示していたら END、そうでなければ CONTINUE だけを返してください。"
@@ -160,6 +168,17 @@ TTS_DIGIT_READINGS = {
     "7": "ナナ",
     "8": "ハチ",
     "9": "キュウ",
+}
+
+IR_MANUFACTURER_PROTOCOL_PREFIXES = {
+    "DAIKIN",
+    "FUJITSU",
+    "HITACHI",
+    "MIDEA",
+    "MITSUBISHI",
+    "PANASONIC",
+    "SHARP",
+    "TOSHIBA",
 }
 
 
@@ -314,6 +333,19 @@ async def run_llm(history: list[dict[str, str]], user_text: str, extra_system_pr
     return response_payload["choices"][0]["message"]["content"].strip()
 
 
+async def run_ir_event_llm(facts: list[str]) -> str:
+    payload = {
+        "messages": [
+            {"role": "system", "content": IR_EVENT_PROMPT},
+            {"role": "user", "content": "解析できた操作: " + "、".join(facts)},
+        ],
+        "temperature": 0.4,
+        "max_tokens": 80,
+    }
+    response_payload = await _request_llm_completion(payload)
+    return usable_ir_llm_speech(response_payload["choices"][0]["message"]["content"].strip())
+
+
 async def run_startup_greeting_llm() -> str:
     payload = {
         "messages": [{"role": "system", "content": STARTUP_GREETING_PROMPT}],
@@ -430,6 +462,82 @@ def is_repetitive_answer(history: list[dict[str, str]], user_text: str, answer: 
     return normalize_compare_text(previous_user) != normalize_compare_text(user_text)
 
 
+def ir_effective_manufacturer(payload: dict[str, Any]) -> str:
+    manufacturer = str(payload.get("manufacturer") or "").strip()
+    if manufacturer and manufacturer.upper() in IR_MANUFACTURER_PROTOCOL_PREFIXES:
+        return manufacturer
+    protocol = str(payload.get("protocol") or "").strip()
+    if not protocol or protocol.upper() == "UNKNOWN":
+        return ""
+    prefix = protocol.split("_", 1)[0].strip()
+    return prefix if prefix.upper() in IR_MANUFACTURER_PROTOCOL_PREFIXES else ""
+
+
+def localized_ir_mode(mode: str) -> str:
+    return {
+        "auto": "自動",
+        "cool": "冷房",
+        "dry": "除湿",
+        "fan": "送風",
+        "heat": "暖房",
+    }.get(mode.lower(), mode)
+
+
+def localized_ir_fan(fan: str) -> str:
+    return {
+        "auto": "自動",
+        "silent": "静か",
+        "low": "弱",
+        "medium": "中",
+        "high": "強",
+        "max": "最大",
+    }.get(fan.lower(), fan)
+
+
+def ir_action_facts(payload: dict[str, Any]) -> list[str]:
+    decoded = payload.get("decoded")
+    if not isinstance(decoded, dict):
+        return []
+    facts: list[str] = []
+    if "power" in decoded:
+        facts.append("運転オン" if decoded.get("power") else "運転オフ")
+    mode = str(decoded.get("mode") or "").strip()
+    if mode:
+        facts.append(f"モード={localized_ir_mode(mode)}")
+    if decoded.get("temperatureC") is not None:
+        facts.append(f"温度={decoded.get('temperatureC')}度")
+    fan = str(decoded.get("fan") or "").strip()
+    if fan:
+        facts.append(f"風量={localized_ir_fan(fan)}")
+    return facts
+
+
+def fallback_ir_action_speech(facts: list[str]) -> str:
+    if not facts:
+        return ""
+    if "運転オフ" in facts:
+        return "エアコンをオフにしたよ。"
+    mode = next((fact.split("=", 1)[1] for fact in facts if fact.startswith("モード=")), "")
+    temp = next((fact.split("=", 1)[1] for fact in facts if fact.startswith("温度=")), "")
+    fan = next((fact.split("=", 1)[1] for fact in facts if fact.startswith("風量=")), "")
+    if mode and temp:
+        return f"{mode}を{temp}にしたよ。"
+    if mode:
+        return f"{mode}に切り替えたよ。"
+    if temp:
+        return f"温度を{temp}にしたよ。"
+    if fan:
+        return f"風量を{fan}にしたよ。"
+    return "エアコンの操作を受け取ったよ。"
+
+
+def usable_ir_llm_speech(text: str) -> str:
+    cleaned = sanitize_startup_greeting(text)
+    if len(normalize_compare_text(cleaned)) <= 4:
+        return ""
+    return cleaned
+
+
 def estimate_tts_seconds(text: str) -> float:
     visible_chars = len(WHITESPACE_RE.sub("", text))
     estimated = max(MIN_TTS_SECONDS, visible_chars * TTS_SECONDS_PER_CHAR)
@@ -518,6 +626,7 @@ class BridgeSession:
     input_packets: list[bytes] = field(default_factory=list)
     response_task: asyncio.Task | None = None
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    ir_speech_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     audio_packet_count: int = 0
     mcp_next_id: int = 1
     pending_end_conversation: bool = False
@@ -525,6 +634,7 @@ class BridgeSession:
     consecutive_no_input_count: int = 0
     closed: bool = False
     mcp_pending: dict[str, asyncio.Future] = field(default_factory=dict)
+    last_ir_manufacturer: str = ""
 
     async def send_json(self, payload: dict[str, Any]) -> None:
         if self.closed:
@@ -648,6 +758,37 @@ class BridgeSession:
             await self.respond(text, from_stt=False)
 
         self.spawn_response(runner())
+
+    async def build_ir_decode_speech(self, payload: dict[str, Any]) -> tuple[str, str]:
+        manufacturer = ir_effective_manufacturer(payload)
+        facts = ir_action_facts(payload)
+        if manufacturer and manufacturer != self.last_ir_manufacturer:
+            self.last_ir_manufacturer = manufacturer
+            return "manufacturer_changed", f"メーカーが{manufacturer}に切り替わったよ。"
+        if not facts:
+            return "silent", ""
+        try:
+            text = await run_ir_event_llm(facts)
+        except Exception as exc:
+            logger.warning("session=%s ir_event_llm_failed facts=%r error=%s", self.session_id, facts, exc)
+            text = ""
+        return "action", text or fallback_ir_action_speech(facts)
+
+    def trigger_ir_decode_speech(self, payload: dict[str, Any]) -> None:
+        async def runner() -> None:
+            try:
+                async with self.ir_speech_lock:
+                    reason, text = await self.build_ir_decode_speech(payload)
+                    if not text:
+                        logger.info("session=%s ir_decode_speech_skipped reason=%s", self.session_id, reason)
+                        return
+                    await self.cancel_response()
+                    self.pending_idle_after_tts = True
+                    await self.respond(text, from_stt=False)
+            except Exception:
+                logger.exception("session=%s ir_decode_speech_failed", self.session_id)
+
+        asyncio.create_task(runner())
 
     def append_audio_packet(self, payload: bytes) -> None:
         if self.listening:
@@ -800,6 +941,13 @@ async def speak(payload: dict[str, Any]):
         raise HTTPException(status_code=409, detail="no active device session")
     session.trigger_manual_speech(text)
     return {"status": "queued", "session_id": session.session_id, "text": text}
+
+
+@app.post("/ir/decode-speech")
+async def ir_decode_speech(payload: dict[str, Any]):
+    session = require_active_session()
+    session.trigger_ir_decode_speech(payload)
+    return {"status": "queued", "session_id": session.session_id}
 
 
 def require_active_session() -> BridgeSession:

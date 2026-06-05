@@ -799,56 +799,34 @@ final class RemoteWindowController: NSObject {
             return
         }
         lastSpokenFrameCount = frameCount
-        let text = speechTextForDecode(json, manufacturer: manufacturer, protocolName: protocolName)
-        logDebug("speak decode frame=\(frameCount) text=\(text)")
-        runPython(script: "tools/mac_ac_remote/ac_ir_tool.py", args: ["speak", "--text", text], timeoutSeconds: 8) { exitCode, output in
+        guard let payload = irSpeechPayloadJSON(json, manufacturer: manufacturer, protocolName: protocolName, frameCount: frameCount) else {
+            logDebug("announce decode skipped: payload serialization failed frame=\(frameCount)")
+            return
+        }
+        logDebug("announce decode frame=\(frameCount) manufacturer=\(manufacturer) protocol=\(protocolName)")
+        runPython(script: "tools/mac_ac_remote/ac_ir_tool.py", args: ["announce-ir", "--payload", payload], timeoutSeconds: 8) { exitCode, output in
             if exitCode != 0 {
-                logDebug("speak decode failed exit=\(exitCode) output=\(self.compact(output))")
+                logDebug("announce decode failed exit=\(exitCode) output=\(self.compact(output))")
             } else {
-                logDebug("speak decode queued output=\(self.compact(output))")
+                logDebug("announce decode queued output=\(self.compact(output))")
             }
         }
     }
 
-    private func speechTextForDecode(_ json: [String: Any], manufacturer: String, protocolName: String) -> String {
-        let decoded = json["decoded"] as? [String: Any] ?? [:]
-        var parts = ["赤外線を受信したよ。", "メーカーは\(manufacturer)、プロトコルは\(protocolName)。"]
-        if let power = decoded["power"] as? Bool {
-            parts.append(power ? "運転オン。" : "運転オフ。")
+    private func irSpeechPayloadJSON(_ json: [String: Any], manufacturer: String, protocolName: String, frameCount: Int) -> String? {
+        var payload: [String: Any] = [
+            "manufacturer": manufacturer,
+            "protocol": protocolName,
+            "frame_count": frameCount,
+        ]
+        if let decoded = json["decoded"] as? [String: Any] {
+            payload["decoded"] = decoded
         }
-        if let mode = decoded["mode"] as? String, !mode.isEmpty {
-            parts.append("モードは\(localizedMode(mode))。")
+        guard JSONSerialization.isValidJSONObject(payload),
+              let data = try? JSONSerialization.data(withJSONObject: payload, options: []) else {
+            return nil
         }
-        if let temperature = decoded["temperatureC"] {
-            parts.append("温度は\(temperature)度。")
-        }
-        if let fan = decoded["fan"] as? String, !fan.isEmpty {
-            parts.append("風量は\(localizedFan(fan))。")
-        }
-        return parts.joined()
-    }
-
-    private func localizedMode(_ mode: String) -> String {
-        switch mode.lowercased() {
-        case "cool": return "冷房"
-        case "dry": return "除湿"
-        case "heat": return "暖房"
-        case "auto": return "自動"
-        case "fan": return "送風"
-        default: return mode
-        }
-    }
-
-    private func localizedFan(_ fan: String) -> String {
-        switch fan.lowercased() {
-        case "auto": return "自動"
-        case "silent", "quiet": return "静音"
-        case "low", "min": return "弱"
-        case "medium", "med": return "中"
-        case "high": return "強"
-        case "max": return "最大"
-        default: return fan
-        }
+        return String(data: data, encoding: .utf8)
     }
 
     private func addLearnedRemote(manufacturer: String, protocolName: String, description: String) {

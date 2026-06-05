@@ -219,6 +219,17 @@ def speak(text: str) -> None:
     print(json.dumps(result, ensure_ascii=False))
 
 
+def announce_ir(payload_json: str) -> None:
+    try:
+        payload = json.loads(payload_json)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"invalid IR payload JSON: {exc}") from None
+    if not isinstance(payload, dict):
+        raise RuntimeError("IR payload must be a JSON object")
+    result = bridge_post("/ir/decode-speech", payload, 5)
+    print(json.dumps(result, ensure_ascii=False))
+
+
 def reset_receiver() -> None:
     result = call_tool("self.robot.reset_ir_receiver", {}, 5)
     ensure_ok(result)
@@ -397,6 +408,8 @@ def main() -> int:
     subparsers.add_parser("status")
     speak_parser = subparsers.add_parser("speak")
     speak_parser.add_argument("--text", required=True)
+    announce_parser = subparsers.add_parser("announce-ir")
+    announce_parser.add_argument("--payload", required=True)
     subparsers.add_parser("reset-receiver")
     decode_parser = subparsers.add_parser("decode-latest")
     decode_parser.add_argument("--limit", type=int, default=80)
@@ -417,6 +430,8 @@ def main() -> int:
         status()
     elif args.command == "speak":
         speak(args.text)
+    elif args.command == "announce-ir":
+        announce_ir(args.payload)
     elif args.command == "reset-receiver":
         reset_receiver()
     elif args.command == "decode-latest":

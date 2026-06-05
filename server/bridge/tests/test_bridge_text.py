@@ -13,6 +13,9 @@ from server.bridge.stackchan_voice_bridge import (
     ENABLE_LLM_END_DETECTION,
     LLM_MAX_TOKENS,
     SYSTEM_PROMPT,
+    fallback_ir_action_speech,
+    ir_action_facts,
+    ir_effective_manufacturer,
     is_repetitive_answer,
     is_exit_phrase,
     resolve_bridge_host,
@@ -24,6 +27,7 @@ from server.bridge.stackchan_voice_bridge import (
     sanitize_startup_greeting,
     summarize_http_error,
     tts_readable_text,
+    usable_ir_llm_speech,
 )
 
 
@@ -57,6 +61,30 @@ def test_tts_readable_text_reads_ir_protocol_names_in_japanese():
 
 def test_tts_readable_text_spells_unknown_alpha_numeric_tokens():
     assert tts_readable_text("ABC12を受信したよ。") == "エービーシーイチニを受信したよ。"
+
+
+def test_ir_effective_manufacturer_falls_back_to_protocol_prefix():
+    assert ir_effective_manufacturer({"manufacturer": "Unknown", "protocol": "DAIKIN"}) == "DAIKIN"
+    assert ir_effective_manufacturer({"manufacturer": "Unknown", "protocol": "PANASONIC_AC"}) == "PANASONIC"
+
+
+def test_ir_effective_manufacturer_ignores_non_aircon_protocols():
+    assert ir_effective_manufacturer({"manufacturer": "MULTIBRACKETS", "protocol": "MULTIBRACKETS"}) == ""
+    assert ir_effective_manufacturer({"manufacturer": "Unknown", "protocol": "MULTIBRACKETS"}) == ""
+
+
+def test_ir_action_facts_extracts_aircon_controls():
+    facts = ir_action_facts({"decoded": {"power": True, "mode": "cool", "temperatureC": 26, "fan": "auto"}})
+
+    assert facts == ["運転オン", "モード=冷房", "温度=26度", "風量=自動"]
+
+
+def test_fallback_ir_action_speech_prefers_mode_and_temperature():
+    assert fallback_ir_action_speech(["運転オン", "モード=暖房", "温度=24度"]) == "暖房を24度にしたよ。"
+
+
+def test_usable_ir_llm_speech_rejects_too_short_reply():
+    assert usable_ir_llm_speech("冷房") == ""
 
 
 def test_is_exit_phrase_detects_good_night():
@@ -262,6 +290,53 @@ def test_respond_uses_readable_text_for_tts_but_keeps_display_text(monkeypatch: 
 
     assert {"type": "tts", "state": "sentence_start", "text": "メーカーはPANASONIC、プロトコルはPANASONIC_AC。"} in sent_payloads
     assert tts_inputs == ["メーカーはパナソニック、プロトコルはパナソニック エーシー。"]
+
+
+def test_ir_decode_speech_mentions_manufacturer_only_when_changed(monkeypatch: pytest.MonkeyPatch):
+    session = BridgeSession(websocket=None)  # type: ignore[arg-type]
+
+    async def fake_ir_event_llm(facts):
+        return "冷房を26度にしたよ。"
+
+    monkeypatch.setattr(bridge, "run_ir_event_llm", fake_ir_event_llm)
+
+    first = asyncio.run(
+        session.build_ir_decode_speech(
+            {"manufacturer": "Panasonic", "protocol": "PANASONIC_AC", "decoded": {"power": True, "mode": "cool", "temperatureC": 26}}
+        )
+    )
+    second = asyncio.run(
+        session.build_ir_decode_speech(
+            {"manufacturer": "Panasonic", "protocol": "PANASONIC_AC", "decoded": {"power": True, "mode": "cool", "temperatureC": 26}}
+        )
+    )
+    changed = asyncio.run(
+        session.build_ir_decode_speech(
+            {"manufacturer": "Daikin", "protocol": "DAIKIN", "decoded": {"power": True, "mode": "heat", "temperatureC": 24}}
+        )
+    )
+
+    assert first == ("manufacturer_changed", "メーカーがPanasonicに切り替わったよ。")
+    assert second == ("action", "冷房を26度にしたよ。")
+    assert changed == ("manufacturer_changed", "メーカーがDaikinに切り替わったよ。")
+
+
+def test_ir_decode_speech_stays_silent_without_action_after_known_manufacturer():
+    session = BridgeSession(websocket=None)  # type: ignore[arg-type]
+    session.last_ir_manufacturer = "Panasonic"
+
+    result = asyncio.run(session.build_ir_decode_speech({"manufacturer": "Panasonic", "protocol": "PANASONIC_AC", "decoded": {}}))
+
+    assert result == ("silent", "")
+
+
+def test_ir_decode_speech_ignores_multibrackets():
+    session = BridgeSession(websocket=None)  # type: ignore[arg-type]
+
+    result = asyncio.run(session.build_ir_decode_speech({"manufacturer": "MULTIBRACKETS", "protocol": "MULTIBRACKETS", "decoded": {}}))
+
+    assert result == ("silent", "")
+    assert session.last_ir_manufacturer == ""
 
 
 def test_trigger_manual_speech_marks_idle_after_tts(monkeypatch: pytest.MonkeyPatch):
