@@ -313,6 +313,7 @@ idf_component_register(SRCS ${SOURCES}
                         bt
                         fatfs
                         ArduinoJson
+                        IRremoteESP8266
                         esp-now
                         mooncake
                         mooncake_log
@@ -328,6 +329,12 @@ target_compile_definitions(${COMPONENT_LIB}
                     PRIVATE BOARD_TYPE=\"${BOARD_TYPE}\" BOARD_NAME=\"${BOARD_NAME}\"
                     PRIVATE BUILTIN_TEXT_FONT=${BUILTIN_TEXT_FONT} BUILTIN_ICON_FONT=${BUILTIN_ICON_FONT}
                     )
+
+if(CONFIG_BOARD_TYPE_M5STACK_STACK_CHAN)
+    target_compile_definitions(${COMPONENT_LIB}
+                        PRIVATE IR_SEND_GPIO=GPIO_NUM_9 IR_RECV_GPIO=GPIO_NUM_8
+                        )
+endif()
 
 # Add generation rules
 add_custom_command(

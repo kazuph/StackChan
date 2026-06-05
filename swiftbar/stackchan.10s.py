@@ -108,15 +108,13 @@ def compact_raw(raw: str, limit: int = 82) -> str:
     return raw[:limit - 1] + "..."
 
 
-def analyze_hitachi(raw: str) -> str:
+def analyze_ir(raw: str) -> str:
     try:
         values = [int(value) for value in raw.split(",") if value]
     except ValueError:
         return "Analysis: invalid raw"
     if len(values) < 6:
         return "Analysis: too short"
-    leader_ok = abs(values[0] - 29784) < 3500 and abs(values[1] - 49290) < 7000
-    header_ok = abs(values[2] - 3416) < 700 and abs(values[3] - 1604) < 500
     pairs = list(zip(values[4::2], values[5::2]))
     decodable = [
         (mark, space)
@@ -124,9 +122,7 @@ def analyze_hitachi(raw: str) -> str:
         if 180 <= mark <= 750 and 200 <= space <= 1700
     ]
     bits = len(decodable)
-    proto = "HITACHI_AC424-like" if leader_ok and header_ok else "unknown"
-    expected = "424 bits expected" if proto == "HITACHI_AC424-like" else "no library match"
-    return f"Analysis: {proto}, {bits} bits-ish, {expected}"
+    return f"Analysis: raw IR, {bits} bits-ish, {len(values)} durations"
 
 
 def print_ir_receive_menu() -> None:
@@ -141,10 +137,10 @@ def print_ir_receive_menu() -> None:
     count = latest.get("durations", "?")
     raw = str(latest.get("raw_usec", ""))
     print(f"Latest IR: {count} durations, {age}s ago")
-    print(analyze_hitachi(raw))
+    print(analyze_ir(raw))
     print(f"Raw: {compact_raw(raw)}")
     menu_item("IR RX: copy latest raw", "ir-copy-latest")
-    menu_item("HITACHI: resend latest raw", "ir-resend-latest")
+    menu_item("IR RX: resend latest raw", "ir-resend-latest")
 
 
 def main() -> int:
@@ -163,9 +159,6 @@ def main() -> int:
     print_ir_receive_menu()
     print("---")
     menu_item("Reconnect / recover", "reconnect", refresh=True)
-    print("---")
-    menu_item("HITACHI: Cool ON 24C", "hitachi-cool-on")
-    menu_item("HITACHI: OFF", "hitachi-off")
     print("---")
     menu_item("IR: blink LED 10x", "ir-blink")
     menu_item("IR: NEC test send", "ir-nec")

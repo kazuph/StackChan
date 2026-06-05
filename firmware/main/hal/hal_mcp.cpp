@@ -240,4 +240,26 @@ void Hal::xiaozhi_mcp_init()
                            int pulses      = properties["pulses"].value<int>();
                            return GetHAL().testIrGpioBlink(active_low, pulses, 160, 160);
                        });
+
+    mclog::tagInfo(_tag, "add robot.get_ir_rx_status tool");
+    mcp_server.AddTool("self.robot.get_ir_rx_status",
+                       "Return diagnostics for the external IR receiver handled by IRremoteESP8266: GPIO level, "
+                       "decoded frame count, and last decoded frame timing.",
+                       std::vector<Property>{}, [this](const PropertyList& properties) -> ReturnValue {
+                           return GetHAL().getIrReceiverStatus();
+                       });
+
+    mclog::tagInfo(_tag, "add robot.get_ir_rx_latest tool");
+    mcp_server.AddTool("self.robot.get_ir_rx_latest",
+                       "Return the latest infrared decode result produced on StackChan by IRremoteESP8266.",
+                       std::vector<Property>{}, [this](const PropertyList& properties) -> ReturnValue {
+                           return GetHAL().getIrReceiverLatestRaw();
+                       });
+
+    mclog::tagInfo(_tag, "add robot.reset_ir_receiver tool");
+    mcp_server.AddTool("self.robot.reset_ir_receiver",
+                       "Synchronously clear and re-arm StackChan's external IR receiver without rebooting.",
+                       std::vector<Property>{}, [this](const PropertyList& properties) -> ReturnValue {
+                           return GetHAL().resetIrReceiver();
+                       });
 }

@@ -20,7 +20,8 @@ namespace stackchan {
  */
 class HeadPetModifier : public Modifier {
 public:
-    HeadPetModifier(uint32_t restoreDelayMs = 3000) : _restore_delay_ms(restoreDelayMs)
+    HeadPetModifier(uint32_t restoreDelayMs = 3000, uint8_t angryLoveMotionThreshold = 4)
+        : _restore_delay_ms(restoreDelayMs), _angry_love_motion_threshold(angryLoveMotionThreshold)
     {
         // 绑定信号
         _signal_connection = GetHAL().onHeadPetGesture.connect([this](HeadPetGesture gesture) {
@@ -63,6 +64,10 @@ public:
             _is_waiting_restore = false;
             restore_original_state(stackchan);
         }
+
+        if (_in_angry_state) {
+            update_angry_motion(stackchan, now);
+        }
     }
 
 private:
@@ -79,13 +84,25 @@ private:
             _prev_pitch     = angles.y;
         }
 
+        if (!can_perform_pet_motion(stackchan)) {
+            return;
+        }
+
+        _love_motion_count++;
+        if (_love_motion_count >= _angry_love_motion_threshold) {
+            handle_angry(stackchan);
+            return;
+        }
+
         // 视觉反馈
+        _in_angry_state = false;
         avatar.setEmotion(avatar::Emotion::Happy);
 
         // 添加爱心装饰
         int duration = Random::getInstance().getInt(1500, 2500);
         avatar.removeDecorator(_heart_decorator_id);
         avatar.removeDecorator(_shy_decorator_id);
+        avatar.removeDecorator(_angry_decorator_id);
         _heart_decorator_id =
             avatar.addDecorator(std::make_unique<avatar::HeartDecorator>(lv_screen_active(), duration, 500));
         _shy_decorator_id = avatar.addDecorator(std::make_unique<avatar::ShyDecorator>(lv_screen_active(), duration));
@@ -103,15 +120,41 @@ private:
         stackchan.avatar().setEmotion(_prev_emotion);
         stackchan.motion().moveWithSpeed(_prev_yaw, _prev_pitch, 200);
 
+        stackchan.avatar().removeDecorator(_heart_decorator_id);
+        stackchan.avatar().removeDecorator(_shy_decorator_id);
+        stackchan.avatar().removeDecorator(_angry_decorator_id);
+        _heart_decorator_id = -1;
+        _shy_decorator_id   = -1;
+        _angry_decorator_id = -1;
+
         _in_happy_state = false;
+        _in_angry_state = false;
+        _love_motion_count = 0;
+    }
+
+    void handle_angry(Modifiable& stackchan)
+    {
+        auto& avatar = stackchan.avatar();
+
+        _in_angry_state = true;
+        _angry_motion_phase = 0;
+        _next_angry_motion_tick = 0;
+
+        avatar.setEmotion(avatar::Emotion::Angry);
+
+        int duration = Random::getInstance().getInt(1500, 2500);
+        avatar.removeDecorator(_heart_decorator_id);
+        avatar.removeDecorator(_shy_decorator_id);
+        avatar.removeDecorator(_angry_decorator_id);
+        _angry_decorator_id =
+            avatar.addDecorator(std::make_unique<avatar::AngryDecorator>(lv_screen_active(), duration, 250));
+
+        update_angry_motion(stackchan, GetHAL().millis());
     }
 
     void perform_pet_motion(Modifiable& stackchan)
     {
         auto& motion = stackchan.motion();
-        if (motion.isModifyLocked() || motion.isMoving()) {
-            return;
-        }
 
         int action = Random::getInstance().getInt(0, 2);
         int speed  = Random::getInstance().getInt(300, 500);
@@ -140,6 +183,30 @@ private:
         motion.moveWithSpeed(target_yaw, target_pitch, speed);
     }
 
+    bool can_perform_pet_motion(Modifiable& stackchan)
+    {
+        auto& motion = stackchan.motion();
+        return !motion.isModifyLocked() && !motion.isMoving();
+    }
+
+    void update_angry_motion(Modifiable& stackchan, uint32_t now)
+    {
+        auto& motion = stackchan.motion();
+        if (motion.isModifyLocked() || now < _next_angry_motion_tick) {
+            return;
+        }
+
+        int32_t yaw_offset = (_angry_motion_phase % 2 == 0) ? -260 : 260;
+        int32_t target_yaw = _prev_yaw + yaw_offset;
+
+        target_yaw = uitk::clamp(target_yaw, -512, 512);
+
+        motion.moveWithSpeed(target_yaw, _prev_pitch, 900);
+
+        _angry_motion_phase++;
+        _next_angry_motion_tick = now + 180;
+    }
+
     // 信号相关
     int _signal_connection;
     volatile bool _event_swipe   = false;
@@ -147,11 +214,17 @@ private:
 
     // 状态机相关
     bool _in_happy_state     = false;
+    bool _in_angry_state     = false;
     bool _is_waiting_restore = false;
     uint32_t _restore_tick   = 0;
+    uint32_t _next_angry_motion_tick = 0;
     uint32_t _restore_delay_ms;
+    uint8_t _angry_love_motion_threshold;
+    uint8_t _love_motion_count = 0;
+    uint8_t _angry_motion_phase = 0;
     int _heart_decorator_id = -1;
     int _shy_decorator_id   = -1;
+    int _angry_decorator_id = -1;
 
     // 记忆相关
     avatar::Emotion _prev_emotion = avatar::Emotion::Neutral;

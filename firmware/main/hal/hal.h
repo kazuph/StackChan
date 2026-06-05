@@ -271,6 +271,9 @@ public:
     bool sendIrRaw(const std::vector<uint32_t>& timingsUsec, uint32_t carrierHz = 38000);
     bool testIrGpioBlink(bool activeLow = false, int pulses = 10, int onMs = 120, int offMs = 120);
     void startIrSniff();
+    bool resetIrReceiver();
+    std::string getIrReceiverStatus();
+    std::string getIrReceiverLatestRaw();
 
     /* ------------------------------- Warm Reboot ------------------------------ */
     void requestWarmReboot(int appIndex);

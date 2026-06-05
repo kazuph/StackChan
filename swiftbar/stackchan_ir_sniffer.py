@@ -14,6 +14,7 @@ LATEST_IR_FILE = CONFIG_DIR / "latest_ir.json"
 CAPTURE_LOG_FILE = CONFIG_DIR / "captures.jsonl"
 LOG_FILE = CONFIG_DIR / "ir_sniffer.log"
 PORT_FILE = CONFIG_DIR / "serial_port.txt"
+HEALTH_FILE = CONFIG_DIR / "sniffer.health.json"
 BAUDRATE = 115200
 
 IR_RE = re.compile(r"IR-SNIFF durations=(?P<count>\d+).*?raw_usec=(?P<raw>[0-9,]+)")
@@ -29,6 +30,18 @@ def log(message: str) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     with LOG_FILE.open("a", encoding="utf-8") as file:
         file.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}\n")
+
+
+def write_health(status: str, port: str = "", detail: str = "") -> None:
+    payload = {
+        "timestamp": time.time(),
+        "status": status,
+        "port": port,
+        "detail": detail,
+    }
+    tmp = HEALTH_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(HEALTH_FILE)
 
 
 def find_port() -> str:
@@ -47,11 +60,11 @@ def find_port() -> str:
     raise RuntimeError(f"StackChan serial port not found: {ports}")
 
 
-def save_frame(count: int, raw: str) -> None:
+def save_frame(count: int, raw: str) -> bool:
     values = [int(value) for value in raw.split(",") if value]
-    if count > 1200 or not values or values[0] < 20000:
+    if count > 1200 or count < 100 or not values:
         log(f"ignored durations={count} first={values[0] if values else '?'} bytes={len(raw)}")
-        return
+        return False
     payload = {
         "timestamp": time.time(),
         "durations": count,
@@ -62,6 +75,7 @@ def save_frame(count: int, raw: str) -> None:
     tmp.replace(LATEST_IR_FILE)
     with CAPTURE_LOG_FILE.open("a", encoding="utf-8") as file:
         file.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    return True
 
 
 def main() -> int:
@@ -73,8 +87,10 @@ def main() -> int:
         try:
             port = find_port()
             log(f"opening {port}")
+            write_health("opening", port)
             with serial.Serial(port, BAUDRATE, timeout=1) as ser:
                 while running:
+                    write_health("running", port)
                     line = ser.readline().decode("utf-8", errors="replace").strip()
                     if not line:
                         continue
@@ -83,12 +99,14 @@ def main() -> int:
                         continue
                     count = int(match.group("count"))
                     raw = match.group("raw")
-                    save_frame(count, raw)
-                    log(f"captured durations={count} bytes={len(raw)}")
+                    if save_frame(count, raw):
+                        log(f"captured durations={count} bytes={len(raw)}")
         except Exception as exc:
             log(f"error: {exc}")
+            write_health("error", detail=str(exc))
             time.sleep(2)
     log("stopped")
+    write_health("stopped")
     return 0
 
 

@@ -15,82 +15,12 @@ CONFIG_DIR = Path.home() / ".config" / "stackchan-swiftbar"
 ENDPOINT_FILE = CONFIG_DIR / "endpoint.txt"
 LATEST_IR_FILE = CONFIG_DIR / "latest_ir.json"
 SNIFFER_PID_FILE = CONFIG_DIR / "sniffer.pid"
+SNIFFER_HEALTH_FILE = CONFIG_DIR / "sniffer.health.json"
 ACTION_LOG_FILE = CONFIG_DIR / "action.log"
 LOCK_FILE = CONFIG_DIR / "action.lock"
 DEFAULT_ENDPOINT = "http://192.168.11.12:8787"
 SCRIPT_DIR = Path(__file__).resolve().parent
 SNIFFER = SCRIPT_DIR / "stackchan_ir_sniffer.py"
-
-HITACHI_AC424_HDR_MARK = 3416
-HITACHI_AC424_HDR_SPACE = 1604
-HITACHI_AC424_BIT_MARK = 463
-HITACHI_AC424_ONE_SPACE = 1208
-HITACHI_AC424_ZERO_SPACE = 372
-HITACHI_AC424_MIN_GAP = 100000
-HITACHI_AC424_LDR_MARK = 29784
-HITACHI_AC424_LDR_SPACE = 49290
-HITACHI_AC424_BUTTON_BYTE = 11
-HITACHI_AC424_BUTTON_POWER = 0x13
-HITACHI_AC424_TEMP_BYTE = 13
-HITACHI_AC424_MODE_BYTE = 25
-HITACHI_AC424_POWER_BYTE = 27
-HITACHI_AC424_MODE_COOL = 3
-HITACHI_AC424_FAN_AUTO = 5
-HITACHI_AC424_POWER_ON = 0xF1
-HITACHI_AC424_POWER_OFF = 0xE1
-
-HITACHI_AC424_BASE = [
-    0x01, 0x10, 0x00, 0x40, 0xBF, 0xFF, 0x00, 0xCC, 0x33, 0x92, 0x6D, 0x13, 0xEC,
-    0x5C, 0xA3, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x53,
-    0xAC, 0xF1, 0x0E, 0x00, 0xFF, 0x00, 0xFF, 0x80, 0x7F, 0x03, 0xFC, 0x01, 0xFE,
-    0x88, 0x77, 0x00, 0xFF, 0x00, 0xFF, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF,
-    0x00,
-]
-
-HITACHI_RAW = (
-    "29914,49798,3374,1684,410,1270,410,430,411,429,411,430,410,430,409,430,411,429,411,430,"
-    "410,430,410,430,409,430,410,430,410,1270,410,430,410,430,410,430,410,429,411,429,411,429,"
-    "411,429,411,429,410,430,411,429,410,429,411,429,411,429,411,429,412,427,412,428,412,429,"
-    "411,1268,412,428,412,1268,412,1266,414,1266,413,1265,413,1267,414,1265,412,426,414,1266,"
-    "413,1267,413,1266,413,1267,413,1266,413,1266,413,1267,412,1267,413,1266,412,427,413,427,"
-    "413,426,414,426,414,427,413,426,414,426,413,426,414,425,414,426,413,1266,413,1266,414,426,"
-    "413,427,414,1266,414,1265,414,1266,414,1266,414,426,413,427,414,1266,413,1267,413,427,"
-    "413,427,413,426,413,1266,413,427,415,425,413,1267,412,427,413,427,413,1266,413,1266,"
-    "413,427,413,1266,413,1266,412,428,412,1267,416,1263,412,427,412,1267,412,1267,412,428,"
-    "412,428,411,1268,411,428,412,428,411,429,411,429,411,429,410,1269,411,1268,411,429,"
-    "410,1270,410,1269,410,1270,409,431,408,433,407,433,407,434,406,1273,405,1275,404,437,"
-    "403,1276,403,1301,378,1302,377,1302,377,1303,376,464,376,465,349,1330,349,492,348,517,"
-    "323,517,322,518,322,519,320,521,319,546,293,573,266,1387,293,1386,293,1413,213,1466,138"
-)
-
-
-def set_bits(state: list[int], index: int, offset: int, size: int, value: int) -> None:
-    mask = ((1 << size) - 1) << offset
-    state[index] = (state[index] & ~mask) | ((value << offset) & mask)
-
-
-def invert_byte_pairs(state: list[int], start: int = 3) -> None:
-    for index in range(start + 1, len(state), 2):
-        state[index] = (~state[index - 1]) & 0xFF
-
-
-def build_hitachi_ac424_raw(power_on: bool, temp: int = 24) -> str:
-    state = HITACHI_AC424_BASE[:]
-    state[HITACHI_AC424_BUTTON_BYTE] = HITACHI_AC424_BUTTON_POWER
-    set_bits(state, HITACHI_AC424_TEMP_BYTE, 2, 6, max(16, min(32, temp)))
-    set_bits(state, HITACHI_AC424_MODE_BYTE, 0, 4, HITACHI_AC424_MODE_COOL)
-    set_bits(state, HITACHI_AC424_MODE_BYTE, 4, 4, HITACHI_AC424_FAN_AUTO)
-    state[HITACHI_AC424_POWER_BYTE] = HITACHI_AC424_POWER_ON if power_on else HITACHI_AC424_POWER_OFF
-    invert_byte_pairs(state)
-
-    timings = [HITACHI_AC424_LDR_MARK, HITACHI_AC424_LDR_SPACE, HITACHI_AC424_HDR_MARK, HITACHI_AC424_HDR_SPACE]
-    for byte in state:
-        for bit_index in range(8):
-            timings.append(HITACHI_AC424_BIT_MARK)
-            timings.append(HITACHI_AC424_ONE_SPACE if byte & (1 << bit_index) else HITACHI_AC424_ZERO_SPACE)
-    timings.extend([HITACHI_AC424_BIT_MARK, HITACHI_AC424_MIN_GAP])
-    return ",".join(str(value) for value in timings)
-
 
 def endpoint() -> str:
     value = os.environ.get("STACKCHAN_MCP_ENDPOINT", "").strip()
@@ -193,9 +123,28 @@ def start_sniffer() -> None:
         try:
             pid = int(SNIFFER_PID_FILE.read_text(encoding="utf-8").strip())
             os.kill(pid, 0)
-            return
+            command = Path(f"/proc/{pid}/cmdline")
+            if sys.platform.startswith("linux") and command.exists():
+                if str(SNIFFER) in command.read_text(encoding="utf-8", errors="replace"):
+                    return
+            else:
+                completed = subprocess.run(
+                    ["/bin/ps", "-p", str(pid), "-o", "command="],
+                    check=False,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                )
+                if str(SNIFFER) in completed.stdout:
+                    if sniffer_health_age() <= 8:
+                        return
+                    log_action(f"sniffer stale health: pid={pid} age={sniffer_health_age():.1f}s")
+                    os.kill(pid, signal.SIGTERM)
+                    time.sleep(0.3)
+            log_action(f"sniffer stale pid reused by another process: {pid}")
         except Exception:
-            SNIFFER_PID_FILE.unlink(missing_ok=True)
+            pass
+        SNIFFER_PID_FILE.unlink(missing_ok=True)
 
     process = subprocess.Popen(
         ["/usr/bin/python3", str(SNIFFER)],
@@ -228,24 +177,40 @@ def is_sniffer_running() -> bool:
         return False
 
 
+def sniffer_health_age() -> float:
+    try:
+        data = json.loads(SNIFFER_HEALTH_FILE.read_text(encoding="utf-8"))
+        return time.time() - float(data.get("timestamp") or 0)
+    except Exception:
+        return float("inf")
+
+
+def sniffer_status() -> dict:
+    running = is_sniffer_running()
+    try:
+        health = json.loads(SNIFFER_HEALTH_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        health = {}
+    health_age = sniffer_health_age()
+    return {
+        "running": running,
+        "pid": SNIFFER_PID_FILE.read_text(encoding="utf-8").strip() if SNIFFER_PID_FILE.exists() else "",
+        "health_age_sec": None if health_age == float("inf") else round(health_age, 1),
+        "health": health,
+    }
+
+
 def send_raw_once(raw: str) -> None:
-    was_sniffing = is_sniffer_running()
-    if was_sniffing:
-        stop_sniffer()
-        time.sleep(0.5)
+    start_sniffer()
     success = False
     try:
         ensure_ok(call_tool("self.robot.send_ir_raw", {"timings_usec": raw, "carrier_hz": 38000}, 10))
         success = True
     finally:
         mark_ir_result(success)
-        if was_sniffing:
-            start_sniffer()
 
 
 def reconnect() -> None:
-    stop_sniffer()
-    time.sleep(0.5)
     try:
         ensure_ok(call_tool("self.get_device_status", {}, 5))
         set_indicator(0, 0, 0)
@@ -274,26 +239,23 @@ def main(argv: list[str]) -> int:
                 time.sleep(0.35)
         elif action == "ir-blink":
             ensure_ok(call_tool("self.robot.test_ir_gpio_blink", {"active_low": False, "pulses": 10}, 8))
-        elif action == "ac-hitachi-raw":
-            send_raw_once(HITACHI_RAW)
-        elif action == "hitachi-cool-on":
-            mark_ir_started("冷房をつけるね。")
-            send_raw_once(build_hitachi_ac424_raw(True, 24))
-        elif action == "hitachi-off":
-            mark_ir_started("エアコンを消すね。")
-            send_raw_once(build_hitachi_ac424_raw(False, 24))
+        elif action == "ir-resend-latest":
+            latest = read_latest_ir()
+            if not latest:
+                raise RuntimeError("no latest IR capture")
+            send_raw_once(str(latest.get("raw_usec", "")))
         elif action == "reconnect":
             reconnect()
         elif action == "ir-sniff-start":
             start_sniffer()
+        elif action == "ir-sniff-status":
+            start_sniffer()
+            print(json.dumps(sniffer_status(), ensure_ascii=False))
         elif action == "ir-sniff-stop":
             stop_sniffer()
         elif action == "ir-copy-latest":
             raw = read_latest_ir_raw()
             subprocess.run(["/usr/bin/pbcopy"], input=raw.encode("utf-8"), check=True)
-        elif action == "ir-resend-latest":
-            raw = read_latest_ir_raw()
-            send_raw_once(raw)
         elif action == "led-off":
             ensure_ok(call_tool("self.robot.set_led_color", {"red": 0, "green": 0, "blue": 0}, 5))
         elif action == "led":
