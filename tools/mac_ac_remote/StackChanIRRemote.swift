@@ -21,6 +21,7 @@ final class RemoteWindowController: NSObject {
     private let stateURL = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".config/stackchan-swiftbar/ac_remote_ui_state.json")
     private let statusLabel = NSTextField(labelWithString: "StackChan IR Remote")
     private let manufacturerLabel = NSTextField(labelWithString: "")
+    private let protocolLabel = NSTextField(labelWithString: "")
     private let detectionTextView = NSTextView()
     private let tempLabel = NSTextField(labelWithString: "26 C")
     private let swingVLabel = NSTextField(labelWithString: "-")
@@ -138,9 +139,9 @@ final class RemoteWindowController: NSObject {
         let manufacturerRow = NSView()
         manufacturerRow.translatesAutoresizingMaskIntoConstraints = false
         manufacturerRow.widthAnchor.constraint(equalToConstant: contentWidth).isActive = true
-        manufacturerRow.heightAnchor.constraint(equalToConstant: 48).isActive = true
+        manufacturerRow.heightAnchor.constraint(equalToConstant: 62).isActive = true
 
-        manufacturerLabel.font = .systemFont(ofSize: 36, weight: .black)
+        manufacturerLabel.font = .systemFont(ofSize: 33, weight: .black)
         manufacturerLabel.alignment = .center
         manufacturerLabel.textColor = foregroundColor
         manufacturerLabel.lineBreakMode = .byTruncatingMiddle
@@ -148,11 +149,23 @@ final class RemoteWindowController: NSObject {
         manufacturerLabel.translatesAutoresizingMaskIntoConstraints = false
         manufacturerRow.addSubview(manufacturerLabel)
 
+        protocolLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        protocolLabel.alignment = .center
+        protocolLabel.textColor = secondaryTextColor
+        protocolLabel.lineBreakMode = .byTruncatingMiddle
+        protocolLabel.maximumNumberOfLines = 1
+        protocolLabel.translatesAutoresizingMaskIntoConstraints = false
+        manufacturerRow.addSubview(protocolLabel)
+
         NSLayoutConstraint.activate([
             manufacturerLabel.centerXAnchor.constraint(equalTo: manufacturerRow.centerXAnchor),
-            manufacturerLabel.centerYAnchor.constraint(equalTo: manufacturerRow.centerYAnchor),
+            manufacturerLabel.topAnchor.constraint(equalTo: manufacturerRow.topAnchor, constant: 2),
             manufacturerLabel.leadingAnchor.constraint(greaterThanOrEqualTo: manufacturerRow.leadingAnchor),
             manufacturerLabel.trailingAnchor.constraint(lessThanOrEqualTo: manufacturerRow.trailingAnchor),
+            protocolLabel.centerXAnchor.constraint(equalTo: manufacturerRow.centerXAnchor),
+            protocolLabel.topAnchor.constraint(equalTo: manufacturerLabel.bottomAnchor, constant: 2),
+            protocolLabel.leadingAnchor.constraint(greaterThanOrEqualTo: manufacturerRow.leadingAnchor),
+            protocolLabel.trailingAnchor.constraint(lessThanOrEqualTo: manufacturerRow.trailingAnchor),
         ])
         root.addArrangedSubview(manufacturerRow)
 
@@ -534,8 +547,7 @@ final class RemoteWindowController: NSObject {
         let description = json["description"] as? String ?? ""
         let supported = json["supported_send"] as? Bool ?? false
         let age = json["age_sec"] as? Double ?? 0
-        let displayName = remoteDisplayName(manufacturer: manufacturer, protocolName: decodedProtocol)
-        self.manufacturerLabel.stringValue = displayName
+        self.setDetectedHeader(manufacturer: manufacturer, protocolName: decodedProtocol)
         self.detectionTextView.string = decodeSummary(manufacturer: manufacturer, protocolName: decodedProtocol, description: description, age: age)
         self.applyDescription(description)
         self.activeProtocol = decodedProtocol
@@ -555,6 +567,7 @@ final class RemoteWindowController: NSObject {
         isResettingReceiver = true
         activeProtocol = ""
         manufacturerLabel.stringValue = ""
+        protocolLabel.stringValue = ""
         detectionTextView.string = ""
         swingVLabel.stringValue = "-"
         swingHLabel.stringValue = "-"
@@ -633,11 +646,10 @@ final class RemoteWindowController: NSObject {
 
     private func applyLearnedRemote(_ remote: LearnedRemote) {
         activeProtocol = remote.protocolName
-        let displayName = remoteDisplayName(remote)
-        manufacturerLabel.stringValue = displayName
-        detectionTextView.string = "選択: \(displayName)\nprotocol: \(remote.protocolName)\n\(remote.description)"
+        setDetectedHeader(manufacturer: remote.manufacturer, protocolName: remote.protocolName)
+        detectionTextView.string = "選択: manufacturer: \(remote.manufacturer)\nprotocol: \(remote.protocolName)\n\(remote.description)"
         applyDescription(remote.description)
-        statusLabel.stringValue = "選択中: \(displayName) / \(remote.protocolName)"
+        statusLabel.stringValue = "選択中: \(remote.manufacturer) / \(remote.protocolName)"
         renderLearnedRemotes()
     }
 
@@ -748,8 +760,7 @@ final class RemoteWindowController: NSObject {
             let description = json["description"] as? String ?? ""
             let supported = json["supported_send"] as? Bool ?? false
             let age = json["age_sec"] as? Double ?? 0
-            let displayName = self.remoteDisplayName(manufacturer: manufacturer, protocolName: decodedProtocol)
-            self.manufacturerLabel.stringValue = displayName
+            self.setDetectedHeader(manufacturer: manufacturer, protocolName: decodedProtocol)
             self.detectionTextView.string = self.decodeSummary(manufacturer: manufacturer, protocolName: decodedProtocol, description: description, age: age)
             self.applyDescription(description)
             self.addLearnedRemote(manufacturer: manufacturer, protocolName: decodedProtocol, description: description)
@@ -764,34 +775,13 @@ final class RemoteWindowController: NSObject {
         }
     }
 
-    private func remoteDisplayName(_ remote: LearnedRemote) -> String {
-        remoteDisplayName(manufacturer: remote.manufacturer, protocolName: remote.protocolName)
-    }
-
-    private func remoteDisplayName(manufacturer: String, protocolName: String) -> String {
-        let trimmedManufacturer = manufacturer.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedProtocol = protocolName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedManufacturer.isEmpty && trimmedManufacturer.uppercased() != "UNKNOWN" {
-            return trimmedManufacturer
-        }
-        if !trimmedProtocol.isEmpty && trimmedProtocol.uppercased() != "UNKNOWN" {
-            return trimmedProtocol
-        }
-        return "Unknown"
-    }
-
-    private func remoteSubtitle(_ remote: LearnedRemote) -> String {
-        if remote.manufacturer.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() == "UNKNOWN" {
-            return "メーカー名未提供"
-        }
-        return remote.protocolName
+    private func setDetectedHeader(manufacturer: String, protocolName: String) {
+        manufacturerLabel.stringValue = manufacturer
+        protocolLabel.stringValue = protocolName.isEmpty ? "" : "Protocol: \(protocolName)"
     }
 
     private func decodeSummary(manufacturer: String, protocolName: String, description: String, age: Double) -> String {
-        let displayName = remoteDisplayName(manufacturer: manufacturer, protocolName: protocolName)
-        let trimmedManufacturer = manufacturer.trimmingCharacters(in: .whitespacesAndNewlines)
-        let manufacturerLine = trimmedManufacturer.uppercased() == "UNKNOWN" ? "manufacturer: Unknown（API未提供）" : "manufacturer: \(trimmedManufacturer)"
-        return "判定: \(displayName) / \(String(format: "%.1f", age))秒前\nprotocol: \(protocolName)\n\(manufacturerLine)\n\(description)"
+        return "判定: \(String(format: "%.1f", age))秒前\nmanufacturer: \(manufacturer)\nprotocol: \(protocolName)\n\(description)"
     }
 
     private func addLearnedRemote(manufacturer: String, protocolName: String, description: String) {
@@ -846,16 +836,14 @@ final class RemoteWindowController: NSObject {
         select.translatesAutoresizingMaskIntoConstraints = false
         row.addSubview(select)
 
-        let displayName = remoteDisplayName(remote)
-        let subtitle = remoteSubtitle(remote)
-        let manufacturer = NSTextField(labelWithString: displayName)
+        let manufacturer = NSTextField(labelWithString: remote.manufacturer)
         manufacturer.font = .systemFont(ofSize: 16, weight: .bold)
         manufacturer.textColor = foregroundColor
         manufacturer.lineBreakMode = .byTruncatingTail
         manufacturer.translatesAutoresizingMaskIntoConstraints = false
         row.addSubview(manufacturer)
 
-        let protocolName = NSTextField(labelWithString: subtitle)
+        let protocolName = NSTextField(labelWithString: remote.protocolName)
         protocolName.font = .systemFont(ofSize: 12, weight: .medium)
         protocolName.textColor = secondaryTextColor
         protocolName.lineBreakMode = .byTruncatingMiddle
@@ -895,11 +883,10 @@ final class RemoteWindowController: NSObject {
         }
         let remote = learnedRemotes[sender.tag]
         activeProtocol = remote.protocolName
-        let displayName = remoteDisplayName(remote)
-        manufacturerLabel.stringValue = displayName
-        detectionTextView.string = "選択: \(displayName)\nprotocol: \(remote.protocolName)\n\(remote.description)"
+        setDetectedHeader(manufacturer: remote.manufacturer, protocolName: remote.protocolName)
+        detectionTextView.string = "選択: manufacturer: \(remote.manufacturer)\nprotocol: \(remote.protocolName)\n\(remote.description)"
         applyDescription(remote.description)
-        statusLabel.stringValue = "選択中: \(displayName) / \(remote.protocolName)"
+        statusLabel.stringValue = "選択中: \(remote.manufacturer) / \(remote.protocolName)"
         renderLearnedRemotes()
         saveLastState()
     }
@@ -912,6 +899,7 @@ final class RemoteWindowController: NSObject {
         if activeProtocol == removed.protocolName {
             activeProtocol = ""
             manufacturerLabel.stringValue = ""
+            protocolLabel.stringValue = ""
             detectionTextView.string = ""
             statusLabel.stringValue = "削除しました。新しい判定を待っています"
         }
