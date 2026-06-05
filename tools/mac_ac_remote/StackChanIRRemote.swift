@@ -534,8 +534,9 @@ final class RemoteWindowController: NSObject {
         let description = json["description"] as? String ?? ""
         let supported = json["supported_send"] as? Bool ?? false
         let age = json["age_sec"] as? Double ?? 0
-        self.manufacturerLabel.stringValue = manufacturer
-        self.detectionTextView.string = "判定: \(manufacturer) / \(decodedProtocol) / \(description) / \(String(format: "%.1f", age))秒前"
+        let displayName = remoteDisplayName(manufacturer: manufacturer, protocolName: decodedProtocol)
+        self.manufacturerLabel.stringValue = displayName
+        self.detectionTextView.string = decodeSummary(manufacturer: manufacturer, protocolName: decodedProtocol, description: description, age: age)
         self.applyDescription(description)
         self.activeProtocol = decodedProtocol
         self.addLearnedRemote(manufacturer: manufacturer, protocolName: decodedProtocol, description: description)
@@ -632,10 +633,11 @@ final class RemoteWindowController: NSObject {
 
     private func applyLearnedRemote(_ remote: LearnedRemote) {
         activeProtocol = remote.protocolName
-        manufacturerLabel.stringValue = remote.manufacturer
-        detectionTextView.string = "選択: \(remote.manufacturer) / \(remote.protocolName)\n\(remote.description)"
+        let displayName = remoteDisplayName(remote)
+        manufacturerLabel.stringValue = displayName
+        detectionTextView.string = "選択: \(displayName)\nprotocol: \(remote.protocolName)\n\(remote.description)"
         applyDescription(remote.description)
-        statusLabel.stringValue = "選択中: \(remote.manufacturer) / \(remote.protocolName)"
+        statusLabel.stringValue = "選択中: \(displayName) / \(remote.protocolName)"
         renderLearnedRemotes()
     }
 
@@ -746,8 +748,9 @@ final class RemoteWindowController: NSObject {
             let description = json["description"] as? String ?? ""
             let supported = json["supported_send"] as? Bool ?? false
             let age = json["age_sec"] as? Double ?? 0
-            self.manufacturerLabel.stringValue = manufacturer
-            self.detectionTextView.string = "判定: \(manufacturer) / \(decodedProtocol) / \(description) / \(String(format: "%.1f", age))秒前"
+            let displayName = self.remoteDisplayName(manufacturer: manufacturer, protocolName: decodedProtocol)
+            self.manufacturerLabel.stringValue = displayName
+            self.detectionTextView.string = self.decodeSummary(manufacturer: manufacturer, protocolName: decodedProtocol, description: description, age: age)
             self.applyDescription(description)
             self.addLearnedRemote(manufacturer: manufacturer, protocolName: decodedProtocol, description: description)
             if supported {
@@ -759,6 +762,36 @@ final class RemoteWindowController: NSObject {
             }
             self.saveLastState()
         }
+    }
+
+    private func remoteDisplayName(_ remote: LearnedRemote) -> String {
+        remoteDisplayName(manufacturer: remote.manufacturer, protocolName: remote.protocolName)
+    }
+
+    private func remoteDisplayName(manufacturer: String, protocolName: String) -> String {
+        let trimmedManufacturer = manufacturer.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedProtocol = protocolName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedManufacturer.isEmpty && trimmedManufacturer.uppercased() != "UNKNOWN" {
+            return trimmedManufacturer
+        }
+        if !trimmedProtocol.isEmpty && trimmedProtocol.uppercased() != "UNKNOWN" {
+            return trimmedProtocol
+        }
+        return "Unknown"
+    }
+
+    private func remoteSubtitle(_ remote: LearnedRemote) -> String {
+        if remote.manufacturer.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() == "UNKNOWN" {
+            return "メーカー名未提供"
+        }
+        return remote.protocolName
+    }
+
+    private func decodeSummary(manufacturer: String, protocolName: String, description: String, age: Double) -> String {
+        let displayName = remoteDisplayName(manufacturer: manufacturer, protocolName: protocolName)
+        let trimmedManufacturer = manufacturer.trimmingCharacters(in: .whitespacesAndNewlines)
+        let manufacturerLine = trimmedManufacturer.uppercased() == "UNKNOWN" ? "manufacturer: Unknown（API未提供）" : "manufacturer: \(trimmedManufacturer)"
+        return "判定: \(displayName) / \(String(format: "%.1f", age))秒前\nprotocol: \(protocolName)\n\(manufacturerLine)\n\(description)"
     }
 
     private func addLearnedRemote(manufacturer: String, protocolName: String, description: String) {
@@ -813,14 +846,16 @@ final class RemoteWindowController: NSObject {
         select.translatesAutoresizingMaskIntoConstraints = false
         row.addSubview(select)
 
-        let manufacturer = NSTextField(labelWithString: remote.manufacturer)
+        let displayName = remoteDisplayName(remote)
+        let subtitle = remoteSubtitle(remote)
+        let manufacturer = NSTextField(labelWithString: displayName)
         manufacturer.font = .systemFont(ofSize: 16, weight: .bold)
         manufacturer.textColor = foregroundColor
         manufacturer.lineBreakMode = .byTruncatingTail
         manufacturer.translatesAutoresizingMaskIntoConstraints = false
         row.addSubview(manufacturer)
 
-        let protocolName = NSTextField(labelWithString: remote.protocolName)
+        let protocolName = NSTextField(labelWithString: subtitle)
         protocolName.font = .systemFont(ofSize: 12, weight: .medium)
         protocolName.textColor = secondaryTextColor
         protocolName.lineBreakMode = .byTruncatingMiddle
@@ -860,10 +895,11 @@ final class RemoteWindowController: NSObject {
         }
         let remote = learnedRemotes[sender.tag]
         activeProtocol = remote.protocolName
-        manufacturerLabel.stringValue = remote.manufacturer
-        detectionTextView.string = "選択: \(remote.manufacturer) / \(remote.protocolName)\n\(remote.description)"
+        let displayName = remoteDisplayName(remote)
+        manufacturerLabel.stringValue = displayName
+        detectionTextView.string = "選択: \(displayName)\nprotocol: \(remote.protocolName)\n\(remote.description)"
         applyDescription(remote.description)
-        statusLabel.stringValue = "選択中: \(remote.manufacturer) / \(remote.protocolName)"
+        statusLabel.stringValue = "選択中: \(displayName) / \(remote.protocolName)"
         renderLearnedRemotes()
         saveLastState()
     }
