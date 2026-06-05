@@ -23,6 +23,7 @@ from server.bridge.stackchan_voice_bridge import (
     sanitize_llm_text,
     sanitize_startup_greeting,
     summarize_http_error,
+    tts_readable_text,
 )
 
 
@@ -46,6 +47,16 @@ def test_sanitize_llm_text_does_not_truncate_mid_sentence():
     raw = "今日は少し長めに話すね。まだ続きがあるよ。最後まで自然に読み上げてね。"
 
     assert sanitize_llm_text(raw, "なにしてるの?") == raw
+
+
+def test_tts_readable_text_reads_ir_protocol_names_in_japanese():
+    text = "メーカーはPANASONIC、プロトコルはPANASONIC_AC。DAIKINも検知したよ。"
+
+    assert tts_readable_text(text) == "メーカーはパナソニック、プロトコルはパナソニック エーシー。ダイキンも検知したよ。"
+
+
+def test_tts_readable_text_spells_unknown_alpha_numeric_tokens():
+    assert tts_readable_text("ABC12を受信したよ。") == "エービーシーイチニを受信したよ。"
 
 
 def test_is_exit_phrase_detects_good_night():
@@ -222,6 +233,35 @@ def test_send_startup_greeting_returns_to_idle_after_tts(monkeypatch: pytest.Mon
         {"type": "system", "command": "idle_after_tts"},
         {"type": "tts", "state": "stop"},
     ]
+
+
+def test_respond_uses_readable_text_for_tts_but_keeps_display_text(monkeypatch: pytest.MonkeyPatch):
+    session = BridgeSession(websocket=None)  # type: ignore[arg-type]
+    sent_payloads = []
+    tts_inputs = []
+
+    async def fake_tts(text: str):
+        tts_inputs.append(text)
+        return b"wav"
+
+    def fake_opus(_wav: bytes):
+        return [b"opus"]
+
+    async def fake_send_json(payload):
+        sent_payloads.append(payload)
+
+    async def fake_send_audio_stream(_packets):
+        return None
+
+    monkeypatch.setattr(bridge, "run_tts", fake_tts)
+    monkeypatch.setattr(bridge, "wav_bytes_to_opus_packets", fake_opus)
+    monkeypatch.setattr(session, "send_json", fake_send_json)
+    monkeypatch.setattr(session, "send_audio_stream", fake_send_audio_stream)
+
+    asyncio.run(session.respond("メーカーはPANASONIC、プロトコルはPANASONIC_AC。", from_stt=False))
+
+    assert {"type": "tts", "state": "sentence_start", "text": "メーカーはPANASONIC、プロトコルはPANASONIC_AC。"} in sent_payloads
+    assert tts_inputs == ["メーカーはパナソニック、プロトコルはパナソニック エーシー。"]
 
 
 def test_trigger_manual_speech_marks_idle_after_tts(monkeypatch: pytest.MonkeyPatch):

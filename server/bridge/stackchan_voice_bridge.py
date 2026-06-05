@@ -93,6 +93,74 @@ THINK_TAG_BLOCK_RE = re.compile(r"<think\b[^>]*>.*?</think>", re.IGNORECASE | re
 THINK_TAG_RE = re.compile(r"</?think\b[^>]*>", re.IGNORECASE)
 WHITESPACE_RE = re.compile(r"\s+")
 COMPARE_NORMALIZE_RE = re.compile(r"[\s\u3000、。！？!?…,.「」『』（）()\-]+")
+LATIN_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9_+\-.]*")
+
+TTS_WORD_READINGS = {
+    "AC": "エーシー",
+    "API": "エーピーアイ",
+    "DAIKIN": "ダイキン",
+    "FUJITSU": "フジツウ",
+    "GENERAL": "ゼネラル",
+    "GPIO": "ジーピーアイオー",
+    "HITACHI": "ヒタチ",
+    "IR": "アイアール",
+    "LLM": "エルエルエム",
+    "MAC": "マック",
+    "MCP": "エムシーピー",
+    "MIDEA": "ミデア",
+    "MITSUBISHI": "ミツビシ",
+    "NEC": "エヌイーシー",
+    "PANASONIC": "パナソニック",
+    "RAW": "ロー",
+    "SHARP": "シャープ",
+    "STACKCHAN": "スタックチャン",
+    "STT": "エスティーティー",
+    "TOSHIBA": "トウシバ",
+    "TTS": "ティーティーエス",
+    "UNKNOWN": "アンノウン",
+}
+
+TTS_LETTER_READINGS = {
+    "A": "エー",
+    "B": "ビー",
+    "C": "シー",
+    "D": "ディー",
+    "E": "イー",
+    "F": "エフ",
+    "G": "ジー",
+    "H": "エイチ",
+    "I": "アイ",
+    "J": "ジェー",
+    "K": "ケー",
+    "L": "エル",
+    "M": "エム",
+    "N": "エヌ",
+    "O": "オー",
+    "P": "ピー",
+    "Q": "キュー",
+    "R": "アール",
+    "S": "エス",
+    "T": "ティー",
+    "U": "ユー",
+    "V": "ブイ",
+    "W": "ダブリュー",
+    "X": "エックス",
+    "Y": "ワイ",
+    "Z": "ゼット",
+}
+
+TTS_DIGIT_READINGS = {
+    "0": "ゼロ",
+    "1": "イチ",
+    "2": "ニ",
+    "3": "サン",
+    "4": "ヨン",
+    "5": "ゴ",
+    "6": "ロク",
+    "7": "ナナ",
+    "8": "ハチ",
+    "9": "キュウ",
+}
 
 
 app = FastAPI(title="stackchan-voice-bridge")
@@ -312,6 +380,35 @@ def sanitize_startup_greeting(text: str) -> str:
 
 def sanitize_display_transcript(text: str) -> str:
     return WHITESPACE_RE.sub("", text)
+
+
+def tts_readable_text(text: str) -> str:
+    def readable_token(match: re.Match[str]) -> str:
+        token = match.group(0)
+        upper_token = token.upper()
+        if upper_token in TTS_WORD_READINGS:
+            return TTS_WORD_READINGS[upper_token]
+
+        parts = re.split(r"([_+\-.])", upper_token)
+        readings: list[str] = []
+        for part in parts:
+            if not part or part in {"_", "+", "-", "."}:
+                continue
+            if part in TTS_WORD_READINGS:
+                readings.append(TTS_WORD_READINGS[part])
+                continue
+            chars: list[str] = []
+            for char in part:
+                if char in TTS_LETTER_READINGS:
+                    chars.append(TTS_LETTER_READINGS[char])
+                elif char in TTS_DIGIT_READINGS:
+                    chars.append(TTS_DIGIT_READINGS[char])
+                else:
+                    chars.append(char)
+            readings.append("".join(chars))
+        return " ".join(readings) if readings else token
+
+    return LATIN_TOKEN_RE.sub(readable_token, text)
 
 
 def find_last_message(history: list[dict[str, str]], role: str) -> str:
@@ -622,13 +719,16 @@ class BridgeSession:
     async def respond(self, text: str, from_stt: bool) -> None:
         if not text.strip():
             text = "すみません。うまく答えを作れませんでした。"
+        speech_text = tts_readable_text(text)
         logger.info("session=%s respond=%r", self.session_id, text)
+        if speech_text != text:
+            logger.info("session=%s respond_tts=%r", self.session_id, speech_text)
         if not from_stt:
             await self.send_json({"type": "stt", "text": ""})
         await self.send_json({"type": "llm", "emotion": "neutral"})
         await self.send_json({"type": "tts", "state": "start"})
         await self.send_json({"type": "tts", "state": "sentence_start", "text": text})
-        wav_bytes = await run_tts(text)
+        wav_bytes = await run_tts(speech_text)
         opus_packets = await asyncio.to_thread(wav_bytes_to_opus_packets, wav_bytes)
         logger.info(
             "session=%s tts_packets=%d approx_duration_sec=%.2f pacing_sec=%.3f ahead_packets=%d",
