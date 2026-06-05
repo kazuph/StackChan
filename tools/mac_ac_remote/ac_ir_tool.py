@@ -49,6 +49,23 @@ def api_post(path: str, payload: dict, timeout: int = 12) -> dict:
         raise RuntimeError(f"IRremote API error: {exc}") from None
 
 
+def bridge_post(path: str, payload: dict, timeout: int = 5) -> dict:
+    request = urllib.request.Request(
+        f"{endpoint()}{path}",
+        data=json.dumps(payload).encode(),
+        headers={"content-type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode())
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode(errors="replace")
+        raise RuntimeError(f"HTTP {exc.code}: {body}") from None
+    except Exception as exc:
+        raise RuntimeError(str(exc)) from None
+
+
 def raw_string_to_list(raw: str) -> list[int]:
     return [int(value) for value in raw.split(",") if value.strip()]
 
@@ -194,6 +211,11 @@ def mcp_text(result: dict) -> str:
 def status() -> None:
     result = call_tool("self.get_device_status", {}, 5)
     ensure_ok(result)
+    print(json.dumps(result, ensure_ascii=False))
+
+
+def speak(text: str) -> None:
+    result = bridge_post("/speak", {"text": text}, 5)
     print(json.dumps(result, ensure_ascii=False))
 
 
@@ -373,6 +395,8 @@ def main() -> int:
     send_parser.add_argument("--fan", choices=sorted(FAN_VALUES), default="auto")
 
     subparsers.add_parser("status")
+    speak_parser = subparsers.add_parser("speak")
+    speak_parser.add_argument("--text", required=True)
     subparsers.add_parser("reset-receiver")
     decode_parser = subparsers.add_parser("decode-latest")
     decode_parser.add_argument("--limit", type=int, default=80)
@@ -391,6 +415,8 @@ def main() -> int:
     args = parser.parse_args()
     if args.command == "status":
         status()
+    elif args.command == "speak":
+        speak(args.text)
     elif args.command == "reset-receiver":
         reset_receiver()
     elif args.command == "decode-latest":

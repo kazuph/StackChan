@@ -46,6 +46,7 @@ final class RemoteWindowController: NSObject {
     private var isResettingReceiver = false
     private var decodeInFlight = false
     private var statusHoldUntil = Date.distantPast
+    private var lastSpokenFrameCount = 0
 
     override init() {
         window = NSWindow(
@@ -552,6 +553,7 @@ final class RemoteWindowController: NSObject {
         self.applyDescription(description)
         self.activeProtocol = decodedProtocol
         self.addLearnedRemote(manufacturer: manufacturer, protocolName: decodedProtocol, description: description)
+        self.announceDecodeResult(json, manufacturer: manufacturer, protocolName: decodedProtocol, frameCount: frameCount)
         self.statusLabel.stringValue = supported ? "OK: 受光結果を送信対象に反映しました" : "検知: \(decodedProtocol)（この画面からの送信は未対応）"
         self.saveLastState()
     }
@@ -559,6 +561,7 @@ final class RemoteWindowController: NSObject {
     @objc private func resetDetectedState() {
         decodeAfterTimestamp = Date().timeIntervalSince1970
         lastDecodedFrameCount = 0
+        lastSpokenFrameCount = 0
         pollGeneration += 1
         receiveTimer?.cancel()
         receiveTimer = nil
@@ -575,6 +578,7 @@ final class RemoteWindowController: NSObject {
         runPython(script: "tools/mac_ac_remote/ac_ir_tool.py", args: ["reset-receiver"]) { exitCode, output in
             self.isResettingReceiver = false
             self.lastDecodedFrameCount = 0
+            self.lastSpokenFrameCount = 0
             self.statusLabel.stringValue = exitCode == 0 ? "受光待機中: 新しい判定を待っています" : "ERROR: \(self.compact(output))"
             self.startReceivePolling()
         }
@@ -764,6 +768,7 @@ final class RemoteWindowController: NSObject {
             self.detectionTextView.string = self.decodeSummary(manufacturer: manufacturer, protocolName: decodedProtocol, description: description, age: age)
             self.applyDescription(description)
             self.addLearnedRemote(manufacturer: manufacturer, protocolName: decodedProtocol, description: description)
+            self.announceDecodeResult(json, manufacturer: manufacturer, protocolName: decodedProtocol, frameCount: frameCount)
             if supported {
                 self.activeProtocol = decodedProtocol
                 self.statusLabel.stringValue = "OK: 受光結果を送信対象に反映しました"
@@ -782,6 +787,68 @@ final class RemoteWindowController: NSObject {
 
     private func decodeSummary(manufacturer: String, protocolName: String, description: String, age: Double) -> String {
         return "判定: \(String(format: "%.1f", age))秒前\nmanufacturer: \(manufacturer)\nprotocol: \(protocolName)\n\(description)"
+    }
+
+    private func announceDecodeResult(_ json: [String: Any], manufacturer: String, protocolName: String, frameCount: Int) {
+        guard frameCount > 0, frameCount != lastSpokenFrameCount else {
+            return
+        }
+        let age = json["age_sec"] as? Double ?? 999
+        guard age <= 8 else {
+            logDebug("speak decode skipped old frame=\(frameCount) age=\(age)")
+            return
+        }
+        lastSpokenFrameCount = frameCount
+        let text = speechTextForDecode(json, manufacturer: manufacturer, protocolName: protocolName)
+        logDebug("speak decode frame=\(frameCount) text=\(text)")
+        runPython(script: "tools/mac_ac_remote/ac_ir_tool.py", args: ["speak", "--text", text], timeoutSeconds: 8) { exitCode, output in
+            if exitCode != 0 {
+                logDebug("speak decode failed exit=\(exitCode) output=\(self.compact(output))")
+            } else {
+                logDebug("speak decode queued output=\(self.compact(output))")
+            }
+        }
+    }
+
+    private func speechTextForDecode(_ json: [String: Any], manufacturer: String, protocolName: String) -> String {
+        let decoded = json["decoded"] as? [String: Any] ?? [:]
+        var parts = ["赤外線を受信したよ。", "メーカーは\(manufacturer)、プロトコルは\(protocolName)。"]
+        if let power = decoded["power"] as? Bool {
+            parts.append(power ? "運転オン。" : "運転オフ。")
+        }
+        if let mode = decoded["mode"] as? String, !mode.isEmpty {
+            parts.append("モードは\(localizedMode(mode))。")
+        }
+        if let temperature = decoded["temperatureC"] {
+            parts.append("温度は\(temperature)度。")
+        }
+        if let fan = decoded["fan"] as? String, !fan.isEmpty {
+            parts.append("風量は\(localizedFan(fan))。")
+        }
+        return parts.joined()
+    }
+
+    private func localizedMode(_ mode: String) -> String {
+        switch mode.lowercased() {
+        case "cool": return "冷房"
+        case "dry": return "除湿"
+        case "heat": return "暖房"
+        case "auto": return "自動"
+        case "fan": return "送風"
+        default: return mode
+        }
+    }
+
+    private func localizedFan(_ fan: String) -> String {
+        switch fan.lowercased() {
+        case "auto": return "自動"
+        case "silent", "quiet": return "静音"
+        case "low", "min": return "弱"
+        case "medium", "med": return "中"
+        case "high": return "強"
+        case "max": return "最大"
+        default: return fan
+        }
     }
 
     private func addLearnedRemote(manufacturer: String, protocolName: String, description: String) {
