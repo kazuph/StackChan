@@ -313,7 +313,6 @@ idf_component_register(SRCS ${SOURCES}
                         bt
                         fatfs
                         ArduinoJson
-                        IRremoteESP8266
                         esp-now
                         mooncake
                         mooncake_log

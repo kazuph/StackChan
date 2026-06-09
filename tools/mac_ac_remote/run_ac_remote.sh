@@ -4,13 +4,16 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 APP_PATH="$HOME/Applications/StackChan IR Remote.app"
 BINARY_PATH="/tmp/StackChanIRRemote"
+HELPER_PATH="/tmp/stackchan-ir-tool"
 
 cd "$REPO_ROOT"
 swiftc tools/mac_ac_remote/StackChanIRRemote.swift -o "$BINARY_PATH"
+(cd server && go build -o "$HELPER_PATH" ./cmd/stackchan-ir-tool)
 
 /bin/rm -rf "$APP_PATH"
 /bin/mkdir -p "$APP_PATH/Contents/MacOS"
 /bin/cp "$BINARY_PATH" "$APP_PATH/Contents/MacOS/StackChanIRRemote"
+/bin/cp "$HELPER_PATH" "$APP_PATH/Contents/MacOS/stackchan-ir-tool"
 
 /usr/libexec/PlistBuddy \
   -c "Clear dict" \
@@ -29,5 +32,5 @@ if pids="$(pgrep -x StackChanIRRemote 2>/dev/null)"; then
   kill $pids 2>/dev/null || true
   sleep 0.5
 fi
-pkill -f "tools/mac_ac_remote/ac_ir_tool.py watch-mcp-ir" 2>/dev/null || true
+pkill -f "stackchan-ir-tool watch-mcp-ir" 2>/dev/null || true
 /usr/bin/open "$APP_PATH"

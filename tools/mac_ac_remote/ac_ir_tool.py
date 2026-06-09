@@ -12,7 +12,7 @@ CONFIG_DIR = Path.home() / ".config" / "stackchan-swiftbar"
 ENDPOINT_FILE = CONFIG_DIR / "endpoint.txt"
 CAPTURE_LOG_FILE = CONFIG_DIR / "captures.jsonl"
 DEFAULT_ENDPOINT = "http://127.0.0.1:8787"
-IRREMOTE_API_ENDPOINT = os.environ.get("IRREMOTE_API_ENDPOINT", "https://irremoteesp8266-api.kazu-san.workers.dev").rstrip("/")
+IRREMOTE_API_ENDPOINT = os.environ.get("IRREMOTE_API_ENDPOINT", "https://irremote-worker.kazu-san.workers.dev").rstrip("/")
 
 CARRIER_HZ = 38000
 MIN_USEFUL_MCP_RAWLEN = 100
@@ -111,7 +111,7 @@ def infer_raw(raw: str, frequency: int = CARRIER_HZ) -> dict:
         "confidence": response.get("confidence", 0),
         "candidates": response.get("candidates") or [],
         "supported_send": matched,
-        "source": "irremoteesp8266-api",
+        "source": "irremote-worker",
     }
 
 

@@ -18,6 +18,13 @@ final class RemoteWindowController: NSObject {
     private let panelBorderColor = NSColor(calibratedWhite: 0.72, alpha: 1.0)
     private let window: NSWindow
     private let repoRoot = URL(fileURLWithPath: "/Users/kazuph/src/github.com/kazuph/StackChan")
+    private var helperURL: URL {
+        let bundled = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/stackchan-ir-tool")
+        if FileManager.default.isExecutableFile(atPath: bundled.path) {
+            return bundled
+        }
+        return URL(fileURLWithPath: "/tmp/stackchan-ir-tool")
+    }
     private let stateURL = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".config/stackchan-swiftbar/ac_remote_ui_state.json")
     private let statusLabel = NSTextField(labelWithString: "StackChan IR Remote")
     private let manufacturerLabel = NSTextField(labelWithString: "")
@@ -47,6 +54,9 @@ final class RemoteWindowController: NSObject {
     private var decodeInFlight = false
     private var statusHoldUntil = Date.distantPast
     private var lastSpokenFrameCount = 0
+    private var isApplyingRemoteState = false
+    private var isSendInFlight = false
+    private var queuedSendPower: String?
 
     override init() {
         window = NSWindow(
@@ -175,8 +185,8 @@ final class RemoteWindowController: NSObject {
         let powerRow = row()
         powerRow.addArrangedSubview(label("運転"))
         powerSwitch.state = .on
-        powerSwitch.target = nil
-        powerSwitch.action = nil
+        powerSwitch.target = self
+        powerSwitch.action = #selector(powerChanged)
         powerSwitch.controlSize = .large
         powerRow.addArrangedSubview(powerSwitch)
         powerRow.addArrangedSubview(balanceSpacer())
@@ -208,8 +218,8 @@ final class RemoteWindowController: NSObject {
 
         fanControl.addItems(withTitles: ["自動", "静音", "弱", "中", "強"])
         stylePopup(fanControl)
-        fanControl.target = nil
-        fanControl.action = nil
+        fanControl.target = self
+        fanControl.action = #selector(fanChanged)
         root.addArrangedSubview(labeled("風量", fanControl))
 
         let swingRow = row()
@@ -241,7 +251,7 @@ final class RemoteWindowController: NSObject {
         buttonRow.addArrangedSubview(check)
         root.addArrangedSubview(buttonRow)
 
-        let note = NSTextField(labelWithString: "表示値は受光結果から反映します。送信IRはWeb APIで生成します。")
+        let note = NSTextField(labelWithString: "送信IRはWeb APIで生成し、本体IR RemoteモジュールのRMT送信から出します。")
         note.font = .systemFont(ofSize: 13)
         note.textColor = secondaryTextColor
         note.lineBreakMode = .byWordWrapping
@@ -404,6 +414,10 @@ final class RemoteWindowController: NSObject {
     }
 
     private func startReceivePolling() {
+        guard !isSendInFlight else {
+            logDebug("receive polling start skipped during send generation=\(pollGeneration)")
+            return
+        }
         statusLabel.stringValue = "受光待機中: 新しい判定を待っています"
         receiveTimer?.cancel()
         receiveTimer = nil
@@ -424,10 +438,9 @@ final class RemoteWindowController: NSObject {
         }
 
         let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        task.executableURL = helperURL
         task.currentDirectoryURL = repoRoot
         task.arguments = [
-            "tools/mac_ac_remote/ac_ir_tool.py",
             "watch-mcp-ir",
             "--interval", "0.4",
             "--max-age", "180",
@@ -481,6 +494,15 @@ final class RemoteWindowController: NSObject {
         if monitor.isRunning {
             monitor.terminate()
         }
+    }
+
+    private func pauseReceivePollingForSend() {
+        pollGeneration += 1
+        receiveTimer?.cancel()
+        receiveTimer = nil
+        stopReceiveMonitor()
+        decodeInFlight = false
+        logDebug("receive polling paused for send generation=\(pollGeneration)")
     }
 
     func shutdown() {
@@ -551,10 +573,14 @@ final class RemoteWindowController: NSObject {
         self.setDetectedHeader(manufacturer: manufacturer, protocolName: decodedProtocol)
         self.detectionTextView.string = decodeSummary(manufacturer: manufacturer, protocolName: decodedProtocol, description: description, age: age)
         self.applyDescription(description)
-        self.activeProtocol = decodedProtocol
-        self.addLearnedRemote(manufacturer: manufacturer, protocolName: decodedProtocol, description: description)
         self.announceDecodeResult(json, manufacturer: manufacturer, protocolName: decodedProtocol, frameCount: frameCount)
-        self.statusLabel.stringValue = supported ? "OK: 受光結果を送信対象に反映しました" : "検知: \(decodedProtocol)（この画面からの送信は未対応）"
+        if supported {
+            self.activeProtocol = decodedProtocol
+            self.addLearnedRemote(manufacturer: manufacturer, protocolName: decodedProtocol, description: description)
+            self.statusLabel.stringValue = "OK: 受光結果を送信対象に反映しました"
+        } else {
+            self.statusLabel.stringValue = "検知: \(decodedProtocol)（この画面からの送信は未対応）"
+        }
         self.saveLastState()
     }
 
@@ -575,7 +601,7 @@ final class RemoteWindowController: NSObject {
         swingVLabel.stringValue = "-"
         swingHLabel.stringValue = "-"
         statusLabel.stringValue = "受光リセット中..."
-        runPython(script: "tools/mac_ac_remote/ac_ir_tool.py", args: ["reset-receiver"]) { exitCode, output in
+        runHelperProcess(args: ["reset-receiver"]) { exitCode, output in
             self.isResettingReceiver = false
             self.lastDecodedFrameCount = 0
             self.lastSpokenFrameCount = 0
@@ -588,15 +614,26 @@ final class RemoteWindowController: NSObject {
     @objc private func tempDown() {
         temp = max(16, temp - 1)
         updateTemp()
+        sendAfterUserControlChange(reason: "tempDown")
     }
 
     @objc private func tempUp() {
         temp = min(31, temp + 1)
         updateTemp()
+        sendAfterUserControlChange(reason: "tempUp")
     }
 
     @objc private func modeChanged() {
         updateTemp()
+        sendAfterUserControlChange(reason: "modeChanged")
+    }
+
+    @objc private func fanChanged() {
+        sendAfterUserControlChange(reason: "fanChanged")
+    }
+
+    @objc private func powerChanged() {
+        sendAfterUserControlChange(reason: "powerChanged")
     }
 
     private func updateTemp() {
@@ -621,6 +658,23 @@ final class RemoteWindowController: NSObject {
             logDebug("send aborted: no active protocol and no learned remotes")
             return
         }
+        if isSendInFlight {
+            queuedSendPower = power
+            statusLabel.stringValue = "送信中... 次の操作を反映します"
+            detectionTextView.string = [
+                "送信待ち:",
+                "protocol: \(activeProtocol)",
+                "power: \(power)",
+                "mode: \(modeValue())",
+                "temp: \(temp)C",
+                "fan: \(fanValue())",
+            ].joined(separator: "\n")
+            logDebug("send queued protocol=\(activeProtocol) power=\(power) mode=\(modeValue()) temp=\(temp) fan=\(fanValue())")
+            saveLastState()
+            return
+        }
+        isSendInFlight = true
+        pauseReceivePollingForSend()
         logDebug("send start protocol=\(activeProtocol) power=\(power) mode=\(modeValue()) temp=\(temp) fan=\(fanValue())")
         runHelper(args: [
             "send",
@@ -631,6 +685,14 @@ final class RemoteWindowController: NSObject {
             "--fan", fanValue(),
         ])
         saveLastState()
+    }
+
+    private func sendAfterUserControlChange(reason: String) {
+        guard !isApplyingRemoteState else {
+            return
+        }
+        logDebug("remote control changed reason=\(reason) power=\(powerSwitch.state == .on) protocol=\(activeProtocol)")
+        sendWithCurrentState(power: powerSwitch.state == .on ? "on" : "off")
     }
 
     private func selectDefaultLearnedRemote() {
@@ -678,12 +740,67 @@ final class RemoteWindowController: NSObject {
 
     private func runHelper(args: [String]) {
         statusLabel.stringValue = "送信中..."
-        statusHoldUntil = Date().addingTimeInterval(8)
+        statusHoldUntil = Date().addingTimeInterval(25)
         logDebug("helper start args=\(args.joined(separator: " "))")
-        runPython(script: "tools/mac_ac_remote/ac_ir_tool.py", args: args) { exitCode, output in
+        runHelperProcess(args: args) { exitCode, output in
             logDebug("helper done exit=\(exitCode) output=\(self.compact(output))")
-            self.statusHoldUntil = Date().addingTimeInterval(8)
-            self.statusLabel.stringValue = exitCode == 0 ? "OK: \(self.compact(output))" : "ERROR: \(self.compact(output))"
+            self.statusHoldUntil = Date().addingTimeInterval(25)
+            if args.first == "send" {
+                self.updateSendResult(exitCode: exitCode, output: output)
+            } else {
+                self.statusLabel.stringValue = exitCode == 0 ? "OK: \(self.compact(output))" : "ERROR: \(self.compact(output))"
+            }
+        }
+    }
+
+    private func updateSendResult(exitCode: Int32, output: String) {
+        if exitCode != 0 {
+            statusLabel.stringValue = "ERROR: IR送信に失敗しました"
+            detectionTextView.string = "送信失敗:\n\(compact(output))"
+            finishSendCycle()
+            return
+        }
+        let data = output.data(using: .utf8) ?? Data()
+        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        let protocolName = json?["protocol"] as? String ?? activeProtocol
+        let durations = json?["durations"] as? Int ?? 0
+        let frequency = json?["frequency"] as? Int ?? 0
+        let routeLog = json?["route_log"] as? [String] ?? []
+        let mode = modeValue()
+        lastDecodedFrameCount = 0
+        statusLabel.stringValue = "OK: IR送信しました \(protocolName)"
+        var lines = [
+            "送信完了:",
+            "protocol: \(protocolName)",
+            "power: \(powerSwitch.state == .on ? "on" : "off")",
+            "mode: \(mode)",
+            "temp: \(temp)C",
+            "fan: \(fanValue())",
+            "durations: \(durations)",
+            "frequency: \(frequency)Hz",
+            "",
+            "経路ログ:"
+        ].filter { !$0.isEmpty }
+        lines.append(contentsOf: routeLog.map { "- \($0)" })
+        detectionTextView.string = lines.joined(separator: "\n")
+        finishSendCycle()
+    }
+
+    private func finishSendCycle() {
+        isSendInFlight = false
+        guard let nextPower = queuedSendPower else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                guard !self.isSendInFlight else {
+                    logDebug("receive polling restart skipped; send in-flight generation=\(self.pollGeneration)")
+                    return
+                }
+                self.startReceivePolling()
+            }
+            return
+        }
+        queuedSendPower = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            self.sendWithCurrentState(power: nextPower)
         }
     }
 
@@ -708,8 +825,7 @@ final class RemoteWindowController: NSObject {
         let currentPoll = pollCount
         let afterFrame = lastDecodedFrameCount
         logDebug("poll start #\(currentPoll) generation=\(generation) afterFrame=\(afterFrame)")
-        runPython(
-            script: "tools/mac_ac_remote/ac_ir_tool.py",
+        runHelperProcess(
             args: ["decode-mcp-latest", "--after-frame-count", "\(afterFrame)", "--max-age", "180"],
             timeoutSeconds: 10
         ) { exitCode, output in
@@ -717,10 +833,6 @@ final class RemoteWindowController: NSObject {
             logDebug("poll done #\(currentPoll) exit=\(exitCode) output=\(self.compact(output))")
             if generation != self.pollGeneration || self.isResettingReceiver {
                 logDebug("poll discard #\(currentPoll) stale generation=\(generation) current=\(self.pollGeneration)")
-                return
-            }
-            if Date() < self.statusHoldUntil {
-                logDebug("poll discard #\(currentPoll) while status is held")
                 return
             }
             if exitCode != 0 {
@@ -745,6 +857,10 @@ final class RemoteWindowController: NSObject {
             }
             let frameCount = json["frame_count"] as? Int ?? self.lastDecodedFrameCount
             self.lastDecodedFrameCount = frameCount
+            if Date() < self.statusHoldUntil {
+                logDebug("poll discard #\(currentPoll) while status is held afterFrame=\(frameCount)")
+                return
+            }
             if (json["ok"] as? Bool) == false {
                 if (json["short_frame"] as? Bool) == true {
                     let captured = json["captured_durations"] as? Int ?? 0
@@ -767,13 +883,12 @@ final class RemoteWindowController: NSObject {
             self.setDetectedHeader(manufacturer: manufacturer, protocolName: decodedProtocol)
             self.detectionTextView.string = self.decodeSummary(manufacturer: manufacturer, protocolName: decodedProtocol, description: description, age: age)
             self.applyDescription(description)
-            self.addLearnedRemote(manufacturer: manufacturer, protocolName: decodedProtocol, description: description)
             self.announceDecodeResult(json, manufacturer: manufacturer, protocolName: decodedProtocol, frameCount: frameCount)
             if supported {
                 self.activeProtocol = decodedProtocol
+                self.addLearnedRemote(manufacturer: manufacturer, protocolName: decodedProtocol, description: description)
                 self.statusLabel.stringValue = "OK: 受光結果を送信対象に反映しました"
             } else {
-                self.activeProtocol = decodedProtocol
                 self.statusLabel.stringValue = "検知: \(decodedProtocol)（この画面からの送信は未対応）"
             }
             self.saveLastState()
@@ -804,7 +919,7 @@ final class RemoteWindowController: NSObject {
             return
         }
         logDebug("announce decode frame=\(frameCount) manufacturer=\(manufacturer) protocol=\(protocolName)")
-        runPython(script: "tools/mac_ac_remote/ac_ir_tool.py", args: ["announce-ir", "--payload", payload], timeoutSeconds: 8) { exitCode, output in
+        runHelperProcess(args: ["announce-ir", "--payload", payload], timeoutSeconds: 8) { exitCode, output in
             if exitCode != 0 {
                 logDebug("announce decode failed exit=\(exitCode) output=\(self.compact(output))")
             } else {
@@ -953,6 +1068,9 @@ final class RemoteWindowController: NSObject {
     }
 
     private func applyDescription(_ description: String) {
+        isApplyingRemoteState = true
+        defer { isApplyingRemoteState = false }
+
         if description.contains("Power: Off") {
             powerSwitch.state = .off
         } else if description.contains("Power: On") {
@@ -1098,19 +1216,11 @@ final class RemoteWindowController: NSObject {
         fanControl.selectItem(at: state["fan_index"] as? Int ?? fanControl.indexOfSelectedItem)
     }
 
-    private func runAction(args: [String]) {
-        runPython(script: "swiftbar/stackchan_action.py", args: args) { exitCode, output in
-            if exitCode != 0 {
-                self.statusLabel.stringValue = "ERROR: \(self.compact(output))"
-            }
-        }
-    }
-
-    private func runPython(script: String, args: [String], timeoutSeconds: TimeInterval = 12, completion: @escaping (Int32, String) -> Void) {
+    private func runHelperProcess(args: [String], timeoutSeconds: TimeInterval = 12, completion: @escaping (Int32, String) -> Void) {
         let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        task.executableURL = helperURL
         task.currentDirectoryURL = repoRoot
-        task.arguments = [script] + args
+        task.arguments = args
 
         let pipe = Pipe()
         task.standardOutput = pipe

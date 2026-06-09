@@ -4,6 +4,12 @@
  * SPDX-License-Identifier: MIT
  */
 #include "hal.h"
+
+#include <driver/gpio.h>
+
+#ifndef IR_SEND_GPIO
+#define IR_SEND_GPIO GPIO_NUM_5
+#endif
 #include <mooncake_log.h>
 #include <mcp_server.h>
 #include <stackchan/stackchan.h>
@@ -118,6 +124,42 @@ void Hal::xiaozhi_mcp_init()
                            return true;
                        });
 
+    mclog::tagInfo(_tag, "add robot.stop_head_motion tool");
+    mcp_server.AddTool("self.robot.stop_head_motion",
+                       "Stop StackChan head movement during IR debugging by locking motion modifiers and holding the current angle.",
+                       std::vector<Property>{}, [this](const PropertyList& properties) -> ReturnValue {
+                           LvglLockGuard lock;
+
+                           auto& motion = GetStackChan().motion();
+                           motion.setModifyLock(true);
+                           motion.setAutoAngleSyncEnabled(false);
+                           const int yaw   = motion.yawServo().getCurrentAngle();
+                           const int pitch = motion.pitchServo().getCurrentAngle();
+                           motion.yawServo().moveWithSpeed(yaw, 1000);
+                           motion.pitchServo().moveWithSpeed(pitch, 1000);
+
+                           auto result = fmt::format(R"({{"stopped":true,"yaw":{},"pitch":{}}})", yaw / 10, pitch / 10);
+                           mclog::tagInfo(_tag, "stop_head_motion: {}", result);
+                           return result;
+                       });
+
+    mclog::tagInfo(_tag, "add robot.set_servo_power_enabled tool");
+    mcp_server.AddTool("self.robot.set_servo_power_enabled",
+                       "Enable or disable StackChan servo power. Disable this during IR debugging when head movement changes the IR LED direction.",
+                       PropertyList({Property("enabled", kPropertyTypeBoolean, true)}),
+                       [this](const PropertyList& properties) -> ReturnValue {
+                           const bool enabled = properties["enabled"].value<bool>();
+                           LvglLockGuard lock;
+                           auto& motion = GetStackChan().motion();
+                           motion.setModifyLock(!enabled);
+                           motion.setAutoAngleSyncEnabled(enabled);
+                           GetHAL().setServoPowerEnabled(enabled);
+
+                           auto result = fmt::format(R"({{"servo_power_enabled":{}}})", enabled ? "true" : "false");
+                           mclog::tagInfo(_tag, "set_servo_power_enabled: {}", result);
+                           return result;
+                       });
+
     mclog::tagInfo(_tag, "add robot.set_led_color tool");
     mcp_server.AddTool(
         "self.robot.set_led_color",
@@ -199,8 +241,8 @@ void Hal::xiaozhi_mcp_init()
     mclog::tagInfo(_tag, "add robot.send_ir_raw tool");
     mcp_server.AddTool(
         "self.robot.send_ir_raw",
-        "Send a raw infrared frame from StackChan's built-in IR LED. timings_usec is comma-separated mark/space "
-        "durations in microseconds, starting with a mark. Use this for learned air-conditioner frames.",
+        "Send a raw infrared frame from StackChan's built-in IR LED using the ESP-IDF RMT carrier path. "
+        "timings_usec is comma-separated mark/space durations in microseconds, starting with a mark.",
         PropertyList({Property("timings_usec", kPropertyTypeString, std::string()),
                       Property("carrier_hz", kPropertyTypeInteger, 38000, 30000, 60000)}),
         [this](const PropertyList& properties) -> ReturnValue {
@@ -212,10 +254,93 @@ void Hal::xiaozhi_mcp_init()
                 mclog::tagError(_tag, "send_ir_raw invalid timings");
                 return false;
             }
-            return GetHAL().sendIrRaw(timings, static_cast<uint32_t>(carrier_hz));
+            if (!GetHAL().sendIrRaw(timings, static_cast<uint32_t>(carrier_hz))) {
+                return false;
+            }
+            std::string result = "{";
+            result += "\"sent\":true";
+            result += ",\"driver\":\"ESP-IDF RMT\"";
+            result += ",\"function\":\"Hal::sendIrRaw\"";
+            result += ",\"gpio\":" + std::to_string(static_cast<int>(IR_SEND_GPIO));
+            result += ",\"carrier_hz\":" + std::to_string(carrier_hz);
+            result += ",\"timing_count\":" + std::to_string(timings.size());
+            result += "}";
+            return result;
         });
 
-    mclog::tagInfo(_tag, "add robot.send_ir_nec_test tool");
+    mclog::tagInfo(_tag, "add robot.pause_ir_receiver tool");
+    mcp_server.AddTool("self.robot.pause_ir_receiver",
+                       "Temporarily disable the IR receiver before transmitting.",
+                       PropertyList(), [](const PropertyList&) -> ReturnValue {
+                           return GetHAL().pauseIrReceiver();
+                       });
+
+    mclog::tagInfo(_tag, "add robot.resume_ir_receiver tool");
+    mcp_server.AddTool("self.robot.resume_ir_receiver",
+                       "Re-enable the IR receiver after transmitting.",
+                       PropertyList(), [](const PropertyList&) -> ReturnValue {
+                           return GetHAL().resumeIrReceiver();
+                       });
+
+    mclog::tagInfo(_tag, "add robot.send_ir_raw_rmt tool");
+    mcp_server.AddTool(
+        "self.robot.send_ir_raw_rmt",
+	        "Send a raw infrared frame using the ESP-IDF RMT carrier path.",
+	        PropertyList({Property("timings_usec", kPropertyTypeString, std::string()),
+	                      Property("carrier_hz", kPropertyTypeInteger, 38000, 30000, 60000)}),
+	        [this](const PropertyList& properties) -> ReturnValue {
+	            std::string timings_text = properties["timings_usec"].value<std::string>();
+	            int carrier_hz           = properties["carrier_hz"].value<int>();
+
+	            std::vector<uint32_t> timings;
+	            if (!parse_ir_timings(timings_text, timings)) {
+	                mclog::tagError(_tag, "send_ir_raw_rmt invalid timings");
+	                return false;
+	            }
+	            if (!GetHAL().sendIrRawRmt(timings, static_cast<uint32_t>(carrier_hz))) {
+	                return false;
+	            }
+	            std::string result = "{";
+	            result += "\"sent\":true";
+	            result += ",\"driver\":\"ESP-IDF RMT\"";
+	            result += ",\"function\":\"Hal::sendIrRawRmt\"";
+	            result += ",\"gpio\":" + std::to_string(static_cast<int>(IR_SEND_GPIO));
+	            result += ",\"carrier_hz\":" + std::to_string(carrier_hz);
+	            result += ",\"timing_count\":" + std::to_string(timings.size());
+	            result += "}";
+            return result;
+        });
+
+    mclog::tagInfo(_tag, "add robot.send_ir_raw_rmt_inverted tool");
+    mcp_server.AddTool(
+        "self.robot.send_ir_raw_rmt_inverted",
+        "Send a raw infrared frame using ESP-IDF RMT with inverted mark/space levels.",
+        PropertyList({Property("timings_usec", kPropertyTypeString, std::string()),
+                      Property("carrier_hz", kPropertyTypeInteger, 38000, 30000, 60000)}),
+        [this](const PropertyList& properties) -> ReturnValue {
+            std::string timings_text = properties["timings_usec"].value<std::string>();
+            int carrier_hz           = properties["carrier_hz"].value<int>();
+
+            std::vector<uint32_t> timings;
+            if (!parse_ir_timings(timings_text, timings)) {
+                mclog::tagError(_tag, "send_ir_raw_rmt_inverted invalid timings");
+                return false;
+            }
+            if (!GetHAL().sendIrRawRmtInverted(timings, static_cast<uint32_t>(carrier_hz))) {
+                return false;
+            }
+            std::string result = "{";
+            result += "\"sent\":true";
+            result += ",\"driver\":\"ESP-IDF RMT\"";
+            result += ",\"function\":\"Hal::sendIrRawRmtInverted\"";
+            result += ",\"gpio\":" + std::to_string(static_cast<int>(IR_SEND_GPIO));
+            result += ",\"carrier_hz\":" + std::to_string(carrier_hz);
+            result += ",\"timing_count\":" + std::to_string(timings.size());
+            result += "}";
+            return result;
+        });
+
+	    mclog::tagInfo(_tag, "add robot.send_ir_nec_test tool");
     mcp_server.AddTool("self.robot.send_ir_nec_test",
                        "Send a short NEC-format IR test frame from StackChan's built-in IR LED. This is for verifying "
                        "the IR transmitter path before using longer air-conditioner raw frames.",
@@ -243,7 +368,7 @@ void Hal::xiaozhi_mcp_init()
 
     mclog::tagInfo(_tag, "add robot.get_ir_rx_status tool");
     mcp_server.AddTool("self.robot.get_ir_rx_status",
-                       "Return diagnostics for the external IR receiver handled by IRremoteESP8266: GPIO level, "
+                       "Return diagnostics for the external IR receiver handled by ESP-IDF RMT: GPIO level, "
                        "decoded frame count, and last decoded frame timing.",
                        std::vector<Property>{}, [this](const PropertyList& properties) -> ReturnValue {
                            return GetHAL().getIrReceiverStatus();
@@ -251,7 +376,7 @@ void Hal::xiaozhi_mcp_init()
 
     mclog::tagInfo(_tag, "add robot.get_ir_rx_latest tool");
     mcp_server.AddTool("self.robot.get_ir_rx_latest",
-                       "Return the latest infrared decode result produced on StackChan by IRremoteESP8266.",
+                       "Return the latest raw infrared frame captured on StackChan by ESP-IDF RMT.",
                        std::vector<Property>{}, [this](const PropertyList& properties) -> ReturnValue {
                            return GetHAL().getIrReceiverLatestRaw();
                        });

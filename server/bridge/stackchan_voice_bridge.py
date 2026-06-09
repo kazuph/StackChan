@@ -1,14 +1,21 @@
+import os
+from pathlib import Path
+
+
+if __name__ == "__main__" and os.environ.get("STACKCHAN_LEGACY_PYTHON_BRIDGE", "").strip() != "1":
+    server_dir = Path(__file__).resolve().parents[1]
+    os.chdir(server_dir)
+    os.execvp("go", ["go", "run", "./cmd/stackchan-voice-bridge"])
+
 import asyncio
 import io
 import json
 import logging
-import os
 import re
 import time
 import uuid
 import wave
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 import av

@@ -38,7 +38,7 @@ In this direction, StackChan is treated more like a network-connected device end
 
 ## Voice bridge environment setup
 
-The custom voice bridge under `server/bridge/` now reads StackChan-specific runtime settings from a local `.env` file. This keeps machine-specific LAN IPs, local API URLs, and voice settings out of tracked source.
+The custom voice bridge now runs from the Go implementation under `server/bridgego/`. It reads StackChan-specific runtime settings from the existing local `.env` file under `server/bridge/`. This keeps machine-specific LAN IPs, local API URLs, and voice settings out of tracked source.
 
 The committed file is `server/bridge/.env.example`. The actual runtime file is `server/bridge/.env` (or repository-root `.env`), and it is intentionally **not committed**.
 
@@ -65,6 +65,21 @@ STACKCHAN_GEMINI_API_KEY=
 STACKCHAN_VOICE_LOCK_ID=
 ```
 
+Run the Go bridge:
+
+```bash
+cd server
+go run ./cmd/stackchan-voice-bridge
+```
+
+For compatibility, the old direct Python entrypoint also delegates to the Go bridge:
+
+```bash
+python server/bridge/stackchan_voice_bridge.py
+```
+
+Set `STACKCHAN_LEGACY_PYTHON_BRIDGE=1` only when you intentionally need to run the old Python bridge.
+
 Notes:
 
 - If conversation memory were gone, the repository still tells you the expected file layout: `server/bridge/.env.example` is committed, while `server/bridge/.env` must exist locally and is ignored.
@@ -73,7 +88,7 @@ Notes:
 - `STACKCHAN_LLM_MODEL` and `STACKCHAN_VOICE_LOCK_ID` are also optional so model choice and voice choice can stay local to each machine.
 - `STACKCHAN_LLM_MAX_TOKENS` defaults to `2048` for the main conversation response budget.
 - `STACKCHAN_GEMINI_FALLBACK_*` lets the bridge fall back to Gemini Flash-Lite through Google's OpenAI-compatible endpoint when the primary LLM fails.
-- The bridge still binds on `0.0.0.0:$STACKCHAN_BRIDGE_PORT` when started directly.
+- The Go bridge still binds on `0.0.0.0:$STACKCHAN_BRIDGE_PORT` when started directly.
 
 Thank you to the contributors of the StackChan community, especially: 
 
