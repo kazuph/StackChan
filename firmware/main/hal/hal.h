@@ -289,22 +289,6 @@ public:
     WifiStatus getWifiStatus();
     void startSntp();
 
-    /* -------------------------------- App center ------------------------------- */
-    app_center::AppInfoList_t fetchAppList();
-    void launchApp(std::string_view url, std::function<void(int)> onProgress);
-
-    /* --------------------------------- EzData --------------------------------- */
-    void startEzDataService(std::function<void(std::string_view)> onStartLog);
-    uitk::Signal<std::string_view> onEzdataPairCode;
-
-    /* ------------------------------- User Acount ------------------------------ */
-    UserAccountInfo_t getUserAccountInfo();
-    bool updateAccountInfo(std::function<void(std::string_view)> onLog);
-    bool unbindAccount(std::function<void(std::string_view)> onLog);
-
-    /* ----------------------------------- OTA ---------------------------------- */
-    bool updateFirmware(std::function<void(std::string_view)> onLog);
-
     /* ---------------------------------- Audio --------------------------------- */
     void setSpeakerVolume(uint8_t volume, bool permanent = false);
     uint8_t getSpeakerVolume();

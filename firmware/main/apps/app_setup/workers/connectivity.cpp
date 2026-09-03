@@ -20,7 +20,7 @@ static std::string _tag = "Setup-Connectivity";
 
 WifiSetupWorker::WifiSetupWorker()
 {
-    _state       = State::AppDownload;
+    _state       = State::WaitAppConnection;
     _last_state  = State::None;
     _is_first_in = true;
 

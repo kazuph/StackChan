@@ -1,10 +1,10 @@
 menu "Xiaozhi Assistant"
 
 config OTA_URL
-    string "Default OTA URL"
-    default "https://api.tenclass.net/xiaozhi/ota/"
+    string "Local service configuration URL"
+    default ""
     help
-        The application will access this URL to check for new firmwares and server address.
+        The application accesses this URL to obtain the local voice WebSocket address.
 
 choice
     prompt "Flash Assets"

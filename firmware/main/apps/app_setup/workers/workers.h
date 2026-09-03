@@ -84,7 +84,7 @@ private:
         Done,
     };
 
-    State _state      = State::AppDownload;
+    State _state      = State::WaitAppConnection;
     State _last_state = State::None;
 
     uint32_t _last_tick = 0;
@@ -251,13 +251,6 @@ private:
  * @brief
  *
  */
-class SystemUpdateWorker : public WorkerBase {
-public:
-    SystemUpdateWorker();
-    ~SystemUpdateWorker();
-    void update() override;
-};
-
 /**
  * @brief
  *

@@ -15,6 +15,13 @@ file(GLOB_RECURSE STACK_CHAN_SOURCES
     "stackchan/*.cc"
     "stackchan/*.cpp"
 )
+list(FILTER STACK_CHAN_SOURCES EXCLUDE REGEX "/apps/app_app_center/")
+list(FILTER STACK_CHAN_SOURCES EXCLUDE REGEX "/apps/app_ezdata/")
+list(FILTER STACK_CHAN_SOURCES EXCLUDE REGEX "/apps/app_setup/workers/account\\.cpp$")
+list(FILTER STACK_CHAN_SOURCES EXCLUDE REGEX "/hal/hal_account\\.cpp$")
+list(FILTER STACK_CHAN_SOURCES EXCLUDE REGEX "/hal/hal_app_center\\.cpp$")
+list(FILTER STACK_CHAN_SOURCES EXCLUDE REGEX "/hal/hal_ezdata\\.cpp$")
+list(FILTER STACK_CHAN_SOURCES EXCLUDE REGEX "/hal/hal_ota\\.cpp$")
 set(STACK_CHAN_INCLUDE_DIRS 
     "."
 )
