@@ -56,7 +56,7 @@ func StripStackChanWakePrefix(text string) (string, bool) {
 }
 
 func stripNormalizedStackChanWakePrefix(normalized string) (string, bool) {
-	for _, prefix := range []string{"スタックちゃん", "すたっくちゃん", "さっくちゃん", "タクちゃん", "スタッフちゃん"} {
+	for _, prefix := range []string{"スタックちゃん", "すたっくちゃん", "さっくちゃん", "タクちゃん", "スタッフちゃん", "ストックちゃん"} {
 		if strings.HasPrefix(normalized, prefix) {
 			return strings.TrimPrefix(normalized, prefix), true
 		}

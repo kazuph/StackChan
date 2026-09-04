@@ -41,7 +41,7 @@ func TestLoadConfigEnablesTVVoiceControl(t *testing.T) {
 }
 
 func TestStackChanWakePhraseIsExplicit(t *testing.T) {
-	for _, input := range []string{"スタックちゃん", "スタックちゃん？", "すたっくちゃん", "さっくちゃん", "タクちゃん", "スタッフちゃん"} {
+	for _, input := range []string{"スタックちゃん", "スタックちゃん？", "すたっくちゃん", "さっくちゃん", "タクちゃん", "スタッフちゃん", "ストックちゃん"} {
 		if !IsStackChanWakePhrase(input) {
 			t.Fatalf("IsStackChanWakePhrase(%q)=false", input)
 		}
@@ -60,6 +60,7 @@ func TestStackChanWakePrefixStartsConversation(t *testing.T) {
 		"さっくちゃんおはよう。":   "おはよう",
 		"タクちゃん、こんにちは。":  "こんにちは",
 		"スタッフちゃん、こんにちは": "こんにちは",
+		"ストックちゃん、こんにちは": "こんにちは",
 	}
 	for input, want := range tests {
 		got, ok := StripStackChanWakePrefix(input)
