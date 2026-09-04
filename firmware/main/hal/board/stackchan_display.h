@@ -25,11 +25,14 @@ private:
     lv_obj_t* listening_indicator_                   = nullptr;
     lv_obj_t* tv_remote_row_                         = nullptr;
     esp_timer_handle_t preview_timer_                = nullptr;
+    esp_timer_handle_t tv_remote_timer_              = nullptr;
     std::unique_ptr<LvglImage> preview_image_cached_ = nullptr;
 
     void CreateIdleMotionModifier();
     void RefreshListeningIndicator(bool listening);
     void CreateTvRemoteRow();
+    void ShowTvRemoteRow();
+    void HideTvRemoteRow();
 
 protected:
     virtual bool Lock(int timeout_ms = 0) override;

@@ -337,6 +337,26 @@ void Hal::xiaozhi_mcp_init()
                                                         static_cast<uint8_t>(command));
                        });
 
+    mclog::tagInfo(_tag, "add robot.send_lg_tv_command tool");
+    mcp_server.AddTool(
+        "self.robot.send_lg_tv_command", "Send one of StackChan's fixed LG TV remote commands.",
+        PropertyList({Property("action", kPropertyTypeString, std::string())}),
+        [](const PropertyList& properties) -> ReturnValue {
+            const std::string action = properties["action"].value<std::string>();
+            LgTvCommand command;
+            if (action == "power") command = LgTvCommand::Power;
+            else if (action == "volume_down") command = LgTvCommand::VolumeDown;
+            else if (action == "volume_up") command = LgTvCommand::VolumeUp;
+            else if (action == "channel_1") command = LgTvCommand::Channel1;
+            else if (action == "channel_2") command = LgTvCommand::Channel2;
+            else if (action == "channel_3") command = LgTvCommand::Channel3;
+            else {
+                mclog::tagError(_tag, "unknown LG TV action: {}", action);
+                return false;
+            }
+            return GetHAL().sendLgTvCommand(command);
+        });
+
     mclog::tagInfo(_tag, "add robot.test_ir_gpio_blink tool");
     mcp_server.AddTool("self.robot.test_ir_gpio_blink",
                        "Directly blink StackChan's IR LED GPIO without RMT carrier. Use a phone camera to verify "

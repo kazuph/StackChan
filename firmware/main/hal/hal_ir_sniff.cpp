@@ -29,6 +29,7 @@ static const std::string_view _tag = "HAL-IR-RX";
 static constexpr uint32_t kResolutionHz = 1000000;
 static constexpr size_t kMaxSymbols = 700;
 static constexpr uint32_t kMinPulseUsec = 50;
+static constexpr uint32_t kSignalRangeMinNs = 1250;
 static constexpr uint32_t kFrameEndUsec = 120000;
 
 rmt_channel_handle_t rx_channel = nullptr;
@@ -221,7 +222,7 @@ void arm_receive()
         return;
     }
     rmt_receive_config_t receive_config = {};
-    receive_config.signal_range_min_ns = kMinPulseUsec * 1000;
+    receive_config.signal_range_min_ns = kSignalRangeMinNs;
     receive_config.signal_range_max_ns = kFrameEndUsec * 1000;
     esp_err_t err = rmt_receive(rx_channel, raw_symbols, sizeof(raw_symbols), &receive_config);
     if (err != ESP_OK) {

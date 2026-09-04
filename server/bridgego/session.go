@@ -181,7 +181,11 @@ func (s *Session) StopListening() {
 	s.input = nil
 	s.stateMu.Unlock()
 	if len(packets) == 0 {
-		s.SpawnResponse(s.handleMissedInput)
+		if s.cfg.EnableTVVoiceControl {
+			_ = s.StartAmbientListening()
+		} else {
+			s.SpawnResponse(s.handleMissedInput)
+		}
 		return
 	}
 	s.SpawnResponse(func(ctx context.Context) error {
@@ -339,6 +343,13 @@ func (s *Session) saveIRStateLocked() {
 }
 
 func (s *Session) HandleTurn(ctx context.Context, packets [][]byte) error {
+	if s.cfg.EnableTVVoiceControl {
+		defer func() {
+			if err := s.StartAmbientListening(); err != nil {
+				s.logger.Printf("session=%s ambient_listening_restart_failed: %v", s.id, err)
+			}
+		}()
+	}
 	wavBytes, err := OpusPacketsToWAVBytes(packets, InputSampleRate)
 	if err != nil {
 		return err
@@ -355,6 +366,13 @@ func (s *Session) HandleTurn(ctx context.Context, packets [][]byte) error {
 	history := append([]Message(nil), s.history...)
 	s.stateMu.Unlock()
 
+	if s.cfg.EnableTVVoiceControl {
+		handled, err := s.HandleLGTVVoiceCommand(ctx, userText)
+		if !handled {
+			s.logger.Printf("session=%s ambient_voice_ignored text=%q", s.id, userText)
+		}
+		return err
+	}
 	if err := s.SendJSON(map[string]any{"type": "stt", "text": SanitizeDisplayTranscript(userText)}); err != nil {
 		return err
 	}
@@ -373,7 +391,6 @@ func (s *Session) HandleTurn(ctx context.Context, packets [][]byte) error {
 	s.stateMu.Lock()
 	s.pendingEndConversation = end
 	s.stateMu.Unlock()
-
 	rawAnswer, err := s.client.RunLLM(ctx, history, userText, "")
 	answer := ""
 	if err != nil {

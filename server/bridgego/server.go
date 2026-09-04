@@ -334,7 +334,13 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		return
 	}
-	session.TriggerStartupGreeting()
+	if session.cfg.EnableTVVoiceControl {
+		if err := session.StartAmbientListening(); err != nil {
+			return
+		}
+	} else {
+		session.TriggerStartupGreeting()
+	}
 
 	for {
 		mt, data, err := conn.ReadMessage()

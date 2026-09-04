@@ -33,6 +33,7 @@ type Config struct {
 	LLMMaxTokens            int
 	MaxConsecutiveNoInputs  int
 	EnableLLMEndDetection   bool
+	EnableTVVoiceControl    bool
 	EventLogPath            string
 	IRStatePath             string
 }
@@ -66,6 +67,7 @@ func LoadConfig(envDirs ...string) Config {
 		LLMMaxTokens:            envInt("STACKCHAN_LLM_MAX_TOKENS", 2048),
 		MaxConsecutiveNoInputs:  envInt("STACKCHAN_MAX_CONSECUTIVE_NO_INPUTS", 2),
 		EnableLLMEndDetection:   envBool("STACKCHAN_ENABLE_LLM_END_DETECTION"),
+		EnableTVVoiceControl:    envBool("STACKCHAN_ENABLE_TV_VOICE_CONTROL"),
 		EventLogPath:            envString("STACKCHAN_BRIDGE_EVENT_LOG", filepath.Join(os.Getenv("HOME"), "stackchan_voice_bridge.events.log")),
 		IRStatePath:             envString("STACKCHAN_IR_STATE_PATH", filepath.Join(os.Getenv("HOME"), ".config", "stackchan-swiftbar", "bridge_ir_state.json")),
 	}

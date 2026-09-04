@@ -26,6 +26,34 @@ static constexpr uint32_t kNecCarrierHz = 38000;
 
 static bool sendIrRawRmtWithPolarity(const std::vector<uint32_t>& timingsUsec, uint32_t carrierHz, bool inverted);
 
+bool Hal::sendIrNecCode(uint32_t code)
+{
+    std::vector<uint32_t> timings;
+    timings.reserve(67);
+    timings.push_back(9000);
+    timings.push_back(4500);
+    for (int bit = 31; bit >= 0; --bit) {
+        timings.push_back(560);
+        timings.push_back((code & (1UL << bit)) ? 1690 : 560);
+    }
+    timings.push_back(560);
+    return sendIrRaw(timings, kNecCarrierHz);
+}
+
+bool Hal::sendLgTvCommand(LgTvCommand command)
+{
+    uint32_t code = 0;
+    switch (command) {
+        case LgTvCommand::Power: code = 0x20DF10EF; break;
+        case LgTvCommand::VolumeDown: code = 0x20DFC03F; break;
+        case LgTvCommand::VolumeUp: code = 0x20DF40BF; break;
+        case LgTvCommand::Channel1: code = 0x20DF8877; break;
+        case LgTvCommand::Channel2: code = 0x20DF48B7; break;
+        case LgTvCommand::Channel3: code = 0x20DFC837; break;
+    }
+    return sendIrNecCode(code);
+}
+
 bool Hal::sendIrNecTest(uint16_t address, uint8_t command)
 {
     uint32_t data = static_cast<uint32_t>(address) | (static_cast<uint32_t>(command) << 16) |

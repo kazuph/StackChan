@@ -25,11 +25,23 @@ using namespace stackchan::avatar;
 #define TAG "StackChanAvatarDisplay"
 
 namespace {
-constexpr int kTvRemoteButtonCount = 5;
+constexpr int kTvRemoteButtonCount = 6;
 constexpr int kTvRemoteRowHeight   = 40;
 constexpr int kTvRemoteRowPadding  = 2;
 constexpr int kTvRemoteButtonGap   = 2;
-constexpr const char* kTvRemoteLabels[kTvRemoteButtonCount] = {"PWR", "VOL-", "VOL+", "CH-", "CH+"};
+constexpr int kTvRemoteVisibleMs   = 6000;
+struct TvRemoteButtonSpec {
+    const char* label;
+    LgTvCommand command;
+};
+constexpr TvRemoteButtonSpec kTvRemoteButtons[kTvRemoteButtonCount] = {
+    {"PWR", LgTvCommand::Power},
+    {"VOL-", LgTvCommand::VolumeDown},
+    {"VOL+", LgTvCommand::VolumeUp},
+    {"1", LgTvCommand::Channel1},
+    {"2", LgTvCommand::Channel2},
+    {"3", LgTvCommand::Channel3},
+};
 }
 
 LV_FONT_DECLARE(BUILTIN_TEXT_FONT);
@@ -188,6 +200,22 @@ StackChanAvatarDisplay::StackChanAvatarDisplay(esp_lcd_panel_io_handle_t panel_i
     };
     esp_timer_create(&preview_timer_args, &preview_timer_);
 
+    esp_timer_create_args_t tv_remote_timer_args = {
+        .callback =
+            [](void* arg) {
+                lv_async_call(
+                    [](void* display) {
+                        static_cast<StackChanAvatarDisplay*>(display)->HideTvRemoteRow();
+                    },
+                    arg);
+            },
+        .arg                   = this,
+        .dispatch_method       = ESP_TIMER_TASK,
+        .name                  = "tv_remote_timer",
+        .skip_unhandled_events = true,
+    };
+    esp_timer_create(&tv_remote_timer_args, &tv_remote_timer_);
+
     // Create boot logo label if not warm boot
     if (GetHAL().getWarmRebootTarget() < 0) {
         ESP_LOGI(TAG, "Create boot logo label");
@@ -210,6 +238,10 @@ StackChanAvatarDisplay::~StackChanAvatarDisplay()
     if (preview_timer_ != nullptr) {
         esp_timer_stop(preview_timer_);
         esp_timer_delete(preview_timer_);
+    }
+    if (tv_remote_timer_ != nullptr) {
+        esp_timer_stop(tv_remote_timer_);
+        esp_timer_delete(tv_remote_timer_);
     }
 
     if (preview_image_ != nullptr) {
@@ -266,25 +298,45 @@ void StackChanAvatarDisplay::CreateTvRemoteRow()
     lv_obj_set_style_border_width(tv_remote_row_, 0, 0);
     lv_obj_remove_flag(tv_remote_row_, LV_OBJ_FLAG_SCROLLABLE);
 
-    for (const char* label_text : kTvRemoteLabels) {
+    for (const auto& spec : kTvRemoteButtons) {
         lv_obj_t* button = lv_button_create(tv_remote_row_);
         lv_obj_set_height(button, LV_PCT(100));
         lv_obj_set_flex_grow(button, 1);
         lv_obj_set_style_pad_all(button, 0, 0);
         lv_obj_add_event_cb(
             button,
-            [](lv_event_t*) {
-                if (!GetHAL().sendIrNecTest()) {
-                    ESP_LOGE(TAG, "Failed to send NEC IR test frame from TV remote button");
+            [](lv_event_t* event) {
+                const auto* spec = static_cast<const TvRemoteButtonSpec*>(lv_event_get_user_data(event));
+                if (!GetHAL().sendLgTvCommand(spec->command)) {
+                    ESP_LOGE(TAG, "Failed to send LG TV IR command");
                 }
             },
-            LV_EVENT_CLICKED, nullptr);
+            LV_EVENT_CLICKED, const_cast<TvRemoteButtonSpec*>(&spec));
 
         lv_obj_t* label = lv_label_create(button);
-        lv_label_set_text(label, label_text);
+        lv_label_set_text(label, spec.label);
         lv_obj_center(label);
     }
     lv_obj_move_foreground(tv_remote_row_);
+    lv_obj_add_flag(tv_remote_row_, LV_OBJ_FLAG_HIDDEN);
+}
+
+void StackChanAvatarDisplay::ShowTvRemoteRow()
+{
+    if (tv_remote_row_ == nullptr || tv_remote_timer_ == nullptr) {
+        return;
+    }
+    lv_obj_remove_flag(tv_remote_row_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(tv_remote_row_);
+    esp_timer_stop(tv_remote_timer_);
+    esp_timer_start_once(tv_remote_timer_, kTvRemoteVisibleMs * 1000);
+}
+
+void StackChanAvatarDisplay::HideTvRemoteRow()
+{
+    if (tv_remote_row_ != nullptr) {
+        lv_obj_add_flag(tv_remote_row_, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 #include <hal/board/hal_bridge.h>
@@ -312,10 +364,8 @@ void StackChanAvatarDisplay::SetupUI()
 
     auto avatar = std::make_unique<DefaultAvatar>();
     avatar->init(lv_screen_active());
-    avatar->getPanel()->onClick().connect([]() {
-        if (hal_bridge::is_xiaozhi_ready()) {
-            hal_bridge::toggle_xiaozhi_chat_state();
-        }
+    avatar->getPanel()->onClick().connect([this]() {
+        ShowTvRemoteRow();
     });
 
     stackchan.attachAvatar(std::move(avatar));

@@ -63,7 +63,10 @@ STACKCHAN_GEMINI_FALLBACK_URL=https://generativelanguage.googleapis.com/v1beta/o
 STACKCHAN_GEMINI_FALLBACK_MODEL=gemini-2.5-flash-lite
 STACKCHAN_GEMINI_API_KEY=
 STACKCHAN_VOICE_LOCK_ID=
+STACKCHAN_ENABLE_TV_VOICE_CONTROL=false
 ```
+
+`STACKCHAN_ENABLE_TV_VOICE_CONTROL=true` enables continuous edge-VAD listening. Only detected speech is sent to STT, and only the fixed LG TV power, volume, and channel 1–3 phrases are dispatched; all other transcripts are ignored without LLM or TTS.
 
 Run the Go bridge:
 
