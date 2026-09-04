@@ -810,7 +810,7 @@ index 7bc917b..874b137 100644
  
  #endif // I2C_DEVICE_H
 diff --git a/main/display/lcd_display.cc b/main/display/lcd_display.cc
-index 239e10f..34d0065 100644
+index 239e10f..7de0781 100644
 --- a/main/display/lcd_display.cc
 +++ b/main/display/lcd_display.cc
 @@ -512,6 +512,7 @@ void LcdDisplay::SetChatMessage(const char* role, const char* content) {
@@ -837,14 +837,22 @@ index 239e10f..34d0065 100644
      lv_label_set_long_mode(chat_message_label_, LV_LABEL_LONG_WRAP);
      lv_obj_set_style_text_align(chat_message_label_, LV_TEXT_ALIGN_CENTER, 0);
      lv_obj_set_style_text_color(chat_message_label_, lvgl_theme->text_color(), 0);
-@@ -1041,6 +1044,7 @@ void LcdDisplay::SetChatMessage(const char* role, const char* content) {
+@@ -1041,12 +1044,13 @@ void LcdDisplay::SetChatMessage(const char* role, const char* content) {
          }
          return;
      }
 +    ESP_LOGI(TAG, "Bubble message role=%s content=%s", role ? role : "(null)", content ? content : "(null)");
      lv_label_set_text(chat_message_label_, content);
-     // Show bottom_bar_ only when there is content (and subtitle is not globally hidden)
+-    // Show bottom_bar_ only when there is content (and subtitle is not globally hidden)
++    // The custom bridge controls visibility by sending empty or non-empty text.
      if (bottom_bar_ != nullptr) {
+         if (content == nullptr || content[0] == '\0') {
+             lv_obj_add_flag(bottom_bar_, LV_OBJ_FLAG_HIDDEN);
+-        } else if (!hide_subtitle_) {
++        } else {
+             lv_obj_remove_flag(bottom_bar_, LV_OBJ_FLAG_HIDDEN);
+         }
+     }
 diff --git a/main/protocols/protocol.cc b/main/protocols/protocol.cc
 index 470cc91..fcbb50c 100644
 --- a/main/protocols/protocol.cc
