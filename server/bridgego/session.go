@@ -359,6 +359,9 @@ func (s *Session) HandleTurn(ctx context.Context, packets [][]byte) error {
 		return err
 	}
 	if userText == "" {
+		if s.cfg.EnableTVVoiceControl {
+			return nil
+		}
 		return s.handleMissedInput(ctx)
 	}
 	s.stateMu.Lock()
