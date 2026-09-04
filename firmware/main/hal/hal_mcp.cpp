@@ -52,22 +52,6 @@ static bool parse_ir_timings(std::string_view text, std::vector<uint32_t>& timin
     return timings.size() >= 2;
 }
 
-static std::vector<uint32_t> build_nec_timings(uint16_t address, uint8_t command)
-{
-    uint32_t data = static_cast<uint32_t>(address) | (static_cast<uint32_t>(command) << 16) |
-                    (static_cast<uint32_t>(~command & 0xff) << 24);
-    std::vector<uint32_t> timings;
-    timings.reserve(67);
-    timings.push_back(9000);
-    timings.push_back(4500);
-    for (int i = 0; i < 32; ++i) {
-        timings.push_back(560);
-        timings.push_back((data & (1UL << i)) ? 1690 : 560);
-    }
-    timings.push_back(560);
-    return timings;
-}
-
 void Hal::xiaozhi_mcp_init()
 {
     mclog::tagInfo(_tag, "init");
@@ -349,9 +333,8 @@ void Hal::xiaozhi_mcp_init()
                        [this](const PropertyList& properties) -> ReturnValue {
                            int address = properties["address"].value<int>();
                            int command = properties["command"].value<int>();
-                           auto timings =
-                               build_nec_timings(static_cast<uint16_t>(address), static_cast<uint8_t>(command));
-                           return GetHAL().sendIrRaw(timings, 38000);
+                           return GetHAL().sendIrNecTest(static_cast<uint16_t>(address),
+                                                        static_cast<uint8_t>(command));
                        });
 
     mclog::tagInfo(_tag, "add robot.test_ir_gpio_blink tool");

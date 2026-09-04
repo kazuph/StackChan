@@ -18,12 +18,29 @@
 
 static const std::string_view _tag = "HAL-IR";
 static constexpr uint16_t kMaxRmtDurationUsec = 32767;
+static constexpr uint32_t kNecCarrierHz = 38000;
 
 #ifndef IR_SEND_GPIO
 #define IR_SEND_GPIO GPIO_NUM_5
 #endif
 
 static bool sendIrRawRmtWithPolarity(const std::vector<uint32_t>& timingsUsec, uint32_t carrierHz, bool inverted);
+
+bool Hal::sendIrNecTest(uint16_t address, uint8_t command)
+{
+    uint32_t data = static_cast<uint32_t>(address) | (static_cast<uint32_t>(command) << 16) |
+                    (static_cast<uint32_t>(~command & 0xff) << 24);
+    std::vector<uint32_t> timings;
+    timings.reserve(67);
+    timings.push_back(9000);
+    timings.push_back(4500);
+    for (int i = 0; i < 32; ++i) {
+        timings.push_back(560);
+        timings.push_back((data & (1UL << i)) ? 1690 : 560);
+    }
+    timings.push_back(560);
+    return sendIrRaw(timings, kNecCarrierHz);
+}
 
 bool Hal::testIrGpioBlink(bool activeLow, int pulses, int onMs, int offMs)
 {

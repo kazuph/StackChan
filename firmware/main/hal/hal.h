@@ -271,6 +271,7 @@ public:
     bool sendIrRaw(const std::vector<uint32_t>& timingsUsec, uint32_t carrierHz = 38000);
     bool sendIrRawRmt(const std::vector<uint32_t>& timingsUsec, uint32_t carrierHz = 38000);
     bool sendIrRawRmtInverted(const std::vector<uint32_t>& timingsUsec, uint32_t carrierHz = 38000);
+    bool sendIrNecTest(uint16_t address = 0, uint8_t command = 85);
     bool testIrGpioBlink(bool activeLow = false, int pulses = 10, int onMs = 120, int offMs = 120);
     void startIrSniff();
     bool resetIrReceiver();

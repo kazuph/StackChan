@@ -24,6 +24,14 @@ using namespace stackchan::avatar;
 
 #define TAG "StackChanAvatarDisplay"
 
+namespace {
+constexpr int kTvRemoteButtonCount = 5;
+constexpr int kTvRemoteRowHeight   = 40;
+constexpr int kTvRemoteRowPadding  = 2;
+constexpr int kTvRemoteButtonGap   = 2;
+constexpr const char* kTvRemoteLabels[kTvRemoteButtonCount] = {"PWR", "VOL-", "VOL+", "CH-", "CH+"};
+}
+
 LV_FONT_DECLARE(BUILTIN_TEXT_FONT);
 LV_FONT_DECLARE(BUILTIN_ICON_FONT);
 LV_FONT_DECLARE(font_awesome_30_4);
@@ -210,6 +218,9 @@ StackChanAvatarDisplay::~StackChanAvatarDisplay()
     if (listening_indicator_ != nullptr) {
         lv_obj_del(listening_indicator_);
     }
+    if (tv_remote_row_ != nullptr) {
+        lv_obj_del(tv_remote_row_);
+    }
     auto& stackchan = GetStackChan();
     if (stackchan.hasAvatar()) {
         stackchan.resetAvatar();
@@ -241,6 +252,39 @@ void StackChanAvatarDisplay::RefreshListeningIndicator(bool listening)
     } else {
         lv_obj_add_flag(listening_indicator_, LV_OBJ_FLAG_HIDDEN);
     }
+}
+
+void StackChanAvatarDisplay::CreateTvRemoteRow()
+{
+    tv_remote_row_ = lv_obj_create(lv_screen_active());
+    lv_obj_set_size(tv_remote_row_, LV_PCT(100), kTvRemoteRowHeight);
+    lv_obj_align(tv_remote_row_, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_flex_flow(tv_remote_row_, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_all(tv_remote_row_, kTvRemoteRowPadding, 0);
+    lv_obj_set_style_pad_gap(tv_remote_row_, kTvRemoteButtonGap, 0);
+    lv_obj_set_style_bg_opa(tv_remote_row_, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(tv_remote_row_, 0, 0);
+    lv_obj_remove_flag(tv_remote_row_, LV_OBJ_FLAG_SCROLLABLE);
+
+    for (const char* label_text : kTvRemoteLabels) {
+        lv_obj_t* button = lv_button_create(tv_remote_row_);
+        lv_obj_set_height(button, LV_PCT(100));
+        lv_obj_set_flex_grow(button, 1);
+        lv_obj_set_style_pad_all(button, 0, 0);
+        lv_obj_add_event_cb(
+            button,
+            [](lv_event_t*) {
+                if (!GetHAL().sendIrNecTest()) {
+                    ESP_LOGE(TAG, "Failed to send NEC IR test frame from TV remote button");
+                }
+            },
+            LV_EVENT_CLICKED, nullptr);
+
+        lv_obj_t* label = lv_label_create(button);
+        lv_label_set_text(label, label_text);
+        lv_obj_center(label);
+    }
+    lv_obj_move_foreground(tv_remote_row_);
 }
 
 #include <hal/board/hal_bridge.h>
@@ -296,6 +340,8 @@ void StackChanAvatarDisplay::SetupUI()
     lv_obj_set_style_shadow_width(listening_indicator_, 0, 0);
     lv_obj_add_flag(listening_indicator_, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(listening_indicator_);
+
+    CreateTvRemoteRow();
 
     // GetHAL().startStackChanAutoUpdate(24);
 
