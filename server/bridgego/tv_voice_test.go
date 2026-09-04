@@ -8,6 +8,8 @@ func TestParseLGTVVoiceCommand(t *testing.T) {
 		"音量を上げて": "volume_up", "音量下げて！": "volume_down",
 		"1 チャンネル": "channel_1", "二チャンネル": "channel_2", "3チャンネル。": "channel_3",
 		"チャンネル1": "channel_1", "チャンネルを2にして": "channel_2", "チャンネル三": "channel_3",
+		"4チャンネル": "channel_4", "五チャンネル": "channel_5", "チャンネル6": "channel_6",
+		"チャンネル七": "channel_7", "チャンネルを8にして": "channel_8",
 	}
 	for input, want := range tests {
 		got, ok := ParseLGTVVoiceCommand(input)
@@ -18,7 +20,7 @@ func TestParseLGTVVoiceCommand(t *testing.T) {
 }
 
 func TestParseLGTVVoiceCommandRejectsConversation(t *testing.T) {
-	for _, input := range []string{"スタックちゃん", "テレビ見たい", "音量を上げてくれる？", "4チャンネル", "チャンネルを4にして", "テレビ消してから音量上げて"} {
+	for _, input := range []string{"スタックちゃん", "テレビ見たい", "音量を上げてくれる？", "9チャンネル", "チャンネルを9にして", "テレビ消してから音量上げて"} {
 		if action, ok := ParseLGTVVoiceCommand(input); ok {
 			t.Fatalf("ParseLGTVVoiceCommand(%q) unexpectedly accepted %q", input, action)
 		}

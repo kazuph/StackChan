@@ -50,7 +50,19 @@ enum class ImuMotionEvent {
     PickUp,
 };
 
-enum class LgTvCommand { Power, VolumeDown, VolumeUp, Channel1, Channel2, Channel3 };
+enum class LgTvCommand {
+    Power,
+    VolumeDown,
+    VolumeUp,
+    Channel1,
+    Channel2,
+    Channel3,
+    Channel4,
+    Channel5,
+    Channel6,
+    Channel7,
+    Channel8,
+};
 
 /**
  * @brief

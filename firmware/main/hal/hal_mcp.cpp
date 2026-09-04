@@ -350,6 +350,11 @@ void Hal::xiaozhi_mcp_init()
             else if (action == "channel_1") command = LgTvCommand::Channel1;
             else if (action == "channel_2") command = LgTvCommand::Channel2;
             else if (action == "channel_3") command = LgTvCommand::Channel3;
+            else if (action == "channel_4") command = LgTvCommand::Channel4;
+            else if (action == "channel_5") command = LgTvCommand::Channel5;
+            else if (action == "channel_6") command = LgTvCommand::Channel6;
+            else if (action == "channel_7") command = LgTvCommand::Channel7;
+            else if (action == "channel_8") command = LgTvCommand::Channel8;
             else {
                 mclog::tagError(_tag, "unknown LG TV action: {}", action);
                 return false;

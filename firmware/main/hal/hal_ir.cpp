@@ -50,6 +50,11 @@ bool Hal::sendLgTvCommand(LgTvCommand command)
         case LgTvCommand::Channel1: code = 0x20DF8877; break;
         case LgTvCommand::Channel2: code = 0x20DF48B7; break;
         case LgTvCommand::Channel3: code = 0x20DFC837; break;
+        case LgTvCommand::Channel4: code = 0x20DF28D7; break;
+        case LgTvCommand::Channel5: code = 0x20DFA857; break;
+        case LgTvCommand::Channel6: code = 0x20DF6897; break;
+        case LgTvCommand::Channel7: code = 0x20DFE817; break;
+        case LgTvCommand::Channel8: code = 0x20DF18E7; break;
     }
     return sendIrNecCode(code);
 }
