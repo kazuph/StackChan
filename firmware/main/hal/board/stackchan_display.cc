@@ -395,8 +395,8 @@ void StackChanAvatarDisplay::SetupUI()
 
     // GetHAL().startStackChanAutoUpdate(24);
 
-    auto config        = hal_bridge::get_xiaozhi_config();
-    idle_motion_level_ = config.idleRandomMovementLevel;
+    // Keep the idle-motion implementation available, but leave it disabled until it is revisited.
+    idle_motion_level_ = 0;
 
     ESP_LOGI(TAG, "Avatar created and started");
 }
@@ -509,9 +509,7 @@ void StackChanAvatarDisplay::SetChatMessage(const char* role, const char* conten
 
     DisplayLockGuard lock(this);
 
-    if (strcmp(role, "system") == 0) {
-        stackchan.avatar().setSpeech(content);
-    } else if (strcmp(role, "assistant") == 0) {
+    if (strcmp(role, "user") == 0 || strcmp(role, "system") == 0 || strcmp(role, "assistant") == 0) {
         stackchan.avatar().setSpeech(content);
     }
 }
