@@ -216,6 +216,22 @@ StackChanAvatarDisplay::StackChanAvatarDisplay(esp_lcd_panel_io_handle_t panel_i
     };
     esp_timer_create(&tv_remote_timer_args, &tv_remote_timer_);
 
+    esp_timer_create_args_t speech_notification_timer_args = {
+        .callback =
+            [](void* arg) {
+                lv_async_call(
+                    [](void* display) {
+                        static_cast<StackChanAvatarDisplay*>(display)->HideSpeechNotification();
+                    },
+                    arg);
+            },
+        .arg                   = this,
+        .dispatch_method       = ESP_TIMER_TASK,
+        .name                  = "speech_notification_timer",
+        .skip_unhandled_events = true,
+    };
+    esp_timer_create(&speech_notification_timer_args, &speech_notification_timer_);
+
     // Create boot logo label if not warm boot
     if (GetHAL().getWarmRebootTarget() < 0) {
         ESP_LOGI(TAG, "Create boot logo label");
@@ -242,6 +258,10 @@ StackChanAvatarDisplay::~StackChanAvatarDisplay()
     if (tv_remote_timer_ != nullptr) {
         esp_timer_stop(tv_remote_timer_);
         esp_timer_delete(tv_remote_timer_);
+    }
+    if (speech_notification_timer_ != nullptr) {
+        esp_timer_stop(speech_notification_timer_);
+        esp_timer_delete(speech_notification_timer_);
     }
 
     if (preview_image_ != nullptr) {
@@ -510,6 +530,7 @@ void StackChanAvatarDisplay::SetChatMessage(const char* role, const char* conten
     DisplayLockGuard lock(this);
 
     if (strcmp(role, "user") == 0 || strcmp(role, "system") == 0 || strcmp(role, "assistant") == 0) {
+        ++speech_generation_;
         stackchan.avatar().setSpeech(content);
     }
 }
@@ -523,6 +544,7 @@ void StackChanAvatarDisplay::ClearChatMessages()
 
     DisplayLockGuard lock(this);
 
+    ++speech_generation_;
     stackchan.avatar().clearSpeech();
     ESP_LOGI(TAG, "Chat messages cleared");
 }
@@ -690,5 +712,29 @@ void StackChanAvatarDisplay::SetStatus(const char* status)
 
 void StackChanAvatarDisplay::ShowNotification(const char* notification, int duration_ms)
 {
-    LvglDisplay::ShowNotification(notification, duration_ms);
+    auto& stackchan = GetStackChan();
+    if (!stackchan.hasAvatar() || speech_notification_timer_ == nullptr) {
+        return;
+    }
+
+    DisplayLockGuard lock(this);
+    ++speech_generation_;
+    notification_generation_ = speech_generation_;
+    stackchan.avatar().setSpeech(notification);
+    esp_timer_stop(speech_notification_timer_);
+    ESP_ERROR_CHECK(esp_timer_start_once(speech_notification_timer_, duration_ms * 1000));
+}
+
+void StackChanAvatarDisplay::HideSpeechNotification()
+{
+    auto& stackchan = GetStackChan();
+    if (!stackchan.hasAvatar()) {
+        return;
+    }
+
+    DisplayLockGuard lock(this);
+    if (notification_generation_ == speech_generation_) {
+        ++speech_generation_;
+        stackchan.avatar().clearSpeech();
+    }
 }

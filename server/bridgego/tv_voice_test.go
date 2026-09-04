@@ -40,6 +40,13 @@ func TestLoadConfigEnablesTVVoiceControl(t *testing.T) {
 	}
 }
 
+func TestTVCommandAcknowledgementUsesDedicatedDisplayCommand(t *testing.T) {
+	payload := TVCommandAcknowledgement("テレビ を つけ て")
+	if payload["type"] != "system" || payload["command"] != "show_notification" || payload["text"] != "テレビをつけて" {
+		t.Fatalf("TVCommandAcknowledgement()=%v", payload)
+	}
+}
+
 func TestStackChanWakePhraseIsExplicit(t *testing.T) {
 	for _, input := range []string{"スタックちゃん", "スタックちゃん？", "すたっくちゃん", "さっくちゃん", "タクちゃん", "スタッフちゃん", "ストックちゃん"} {
 		if !IsStackChanWakePhrase(input) {

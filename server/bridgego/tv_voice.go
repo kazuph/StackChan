@@ -73,9 +73,6 @@ func (s *Session) HandleLGTVVoiceCommand(ctx context.Context, text string) (bool
 	if !ok {
 		return false, nil
 	}
-	if err := s.SendJSON(map[string]any{"type": "stt", "text": SanitizeDisplayTranscript(text)}); err != nil {
-		s.logger.Printf("session=%s tv_voice_display_failed action=%s error=%v", s.id, action, err)
-	}
 	_, err := s.CallMCP(map[string]any{
 		"method": "tools/call",
 		"params": map[string]any{
@@ -87,6 +84,14 @@ func (s *Session) HandleLGTVVoiceCommand(ctx context.Context, text string) (bool
 		s.logger.Printf("session=%s tv_voice_command action=%s text=%q", s.id, action, text)
 	}
 	return true, err
+}
+
+func TVCommandAcknowledgement(text string) map[string]any {
+	return map[string]any{
+		"type":    "system",
+		"command": "show_notification",
+		"text":    SanitizeDisplayTranscript(text),
+	}
 }
 
 func (s *Session) StartAmbientListening() error {

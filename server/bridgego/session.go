@@ -346,8 +346,12 @@ func (s *Session) saveIRStateLocked() {
 func (s *Session) HandleTurn(ctx context.Context, packets [][]byte) error {
 	recognitionCtx, cancelRecognition := context.WithTimeout(ctx, bridgeRequestTimeout)
 	defer cancelRecognition()
+	restartAmbient := s.cfg.EnableTVVoiceControl
 	if s.cfg.EnableTVVoiceControl {
 		defer func() {
+			if !restartAmbient {
+				return
+			}
 			s.stateMu.Lock()
 			conversationMode := s.conversationMode
 			s.stateMu.Unlock()
@@ -389,7 +393,14 @@ func (s *Session) HandleTurn(ctx context.Context, packets [][]byte) error {
 	if s.cfg.EnableTVVoiceControl && !conversationMode {
 		handled, err := s.HandleLGTVVoiceCommand(ctx, userText)
 		if handled {
-			return err
+			if err != nil {
+				return err
+			}
+			if err := s.StartAmbientListening(); err != nil {
+				return err
+			}
+			restartAmbient = false
+			return s.SendJSON(TVCommandAcknowledgement(userText))
 		}
 		remainder, wakeDetected := StripStackChanWakePrefix(userText)
 		if wakeDetected {
