@@ -363,7 +363,7 @@ void StackChanAvatarDisplay::SetupUI()
     ESP_LOGI(TAG, "Creating Stack-chan Avatar...");
 
     auto avatar = std::make_unique<DefaultAvatar>();
-    avatar->init(lv_screen_active());
+    avatar->init(lv_screen_active(), &BUILTIN_TEXT_FONT);
     avatar->getPanel()->onClick().connect([this]() {
         ShowTvRemoteRow();
     });
