@@ -380,20 +380,27 @@ func (s *Session) HandleTurn(ctx context.Context, packets [][]byte) error {
 	s.stateMu.Unlock()
 
 	if s.cfg.EnableTVVoiceControl && !conversationMode {
-		if IsStackChanWakePhrase(userText) {
+		handled, err := s.HandleLGTVVoiceCommand(ctx, userText)
+		if handled {
+			return err
+		}
+		remainder, wakeDetected := StripStackChanWakePrefix(userText)
+		if wakeDetected {
 			s.stateMu.Lock()
 			s.conversationMode = true
 			s.stateMu.Unlock()
-			if err := s.SendJSON(map[string]any{"type": "stt", "text": SanitizeDisplayTranscript(userText)}); err != nil {
-				return err
+			if remainder != "" {
+				userText = remainder
+			} else {
+				if err := s.SendJSON(map[string]any{"type": "stt", "text": SanitizeDisplayTranscript(userText)}); err != nil {
+					return err
+				}
+				return s.Respond(ctx, "なあに？", true)
 			}
-			return s.Respond(ctx, "なあに？", true)
-		}
-		handled, err := s.HandleLGTVVoiceCommand(ctx, userText)
-		if !handled {
+		} else {
 			s.logger.Printf("session=%s ambient_voice_ignored text=%q", s.id, userText)
+			return nil
 		}
-		return err
 	}
 	if err := s.SendJSON(map[string]any{"type": "stt", "text": SanitizeDisplayTranscript(userText)}); err != nil {
 		return err

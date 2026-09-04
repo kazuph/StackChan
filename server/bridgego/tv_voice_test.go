@@ -12,6 +12,9 @@ func TestParseLGTVVoiceCommand(t *testing.T) {
 		"チャンネル七": "channel_7", "チャンネルを8にして": "channel_8",
 		"スタックちゃん、テレビをつけて": "power", "すたっくちゃん音量を下げて": "volume_down",
 		"スタックちゃん、チャンネルを8にして": "channel_8",
+		"テレビを消してテレビを消して":     "power",
+		"音量下げて。何て言うの？":       "volume_down",
+		"タクちゃん、テレビをつけて":      "power",
 	}
 	for input, want := range tests {
 		got, ok := ParseLGTVVoiceCommand(input)
@@ -22,7 +25,7 @@ func TestParseLGTVVoiceCommand(t *testing.T) {
 }
 
 func TestParseLGTVVoiceCommandRejectsConversation(t *testing.T) {
-	for _, input := range []string{"スタックちゃん", "テレビ見たい", "音量を上げてくれる？", "9チャンネル", "チャンネルを9にして", "テレビ消してから音量上げて", "スタックちゃんテレビ見たい"} {
+	for _, input := range []string{"スタックちゃん", "テレビ見たい", "9チャンネル", "チャンネルを9にして", "テレビ消してから音量上げて", "スタックちゃんテレビ見たい"} {
 		if action, ok := ParseLGTVVoiceCommand(input); ok {
 			t.Fatalf("ParseLGTVVoiceCommand(%q) unexpectedly accepted %q", input, action)
 		}
@@ -37,7 +40,7 @@ func TestLoadConfigEnablesTVVoiceControl(t *testing.T) {
 }
 
 func TestStackChanWakePhraseIsExplicit(t *testing.T) {
-	for _, input := range []string{"スタックちゃん", "スタックちゃん？", "すたっくちゃん"} {
+	for _, input := range []string{"スタックちゃん", "スタックちゃん？", "すたっくちゃん", "さっくちゃん", "タクちゃん"} {
 		if !IsStackChanWakePhrase(input) {
 			t.Fatalf("IsStackChanWakePhrase(%q)=false", input)
 		}
@@ -45,6 +48,26 @@ func TestStackChanWakePhraseIsExplicit(t *testing.T) {
 	for _, input := range []string{"テレビつけて", "スタックちゃんテレビつけて", "ねえスタックちゃん"} {
 		if IsStackChanWakePhrase(input) {
 			t.Fatalf("IsStackChanWakePhrase(%q)=true", input)
+		}
+	}
+}
+
+func TestStackChanWakePrefixStartsConversation(t *testing.T) {
+	tests := map[string]string{
+		"スタックちゃん、こんにちは": "こんにちは",
+		"すたっくちゃんおはよう":   "おはよう",
+		"さっくちゃんおはよう。":   "おはよう",
+		"タクちゃん、こんにちは。":  "こんにちは",
+	}
+	for input, want := range tests {
+		got, ok := StripStackChanWakePrefix(input)
+		if !ok || got != want {
+			t.Fatalf("StripStackChanWakePrefix(%q)=(%q,%v), want (%q,true)", input, got, ok, want)
+		}
+	}
+	for _, input := range []string{"テレビつけて", "ねえスタックちゃん", "洗濯ちゃんこんにちは"} {
+		if remainder, ok := StripStackChanWakePrefix(input); ok {
+			t.Fatalf("StripStackChanWakePrefix(%q) unexpectedly accepted %q", input, remainder)
 		}
 	}
 }

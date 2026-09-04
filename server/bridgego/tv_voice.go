@@ -8,11 +8,8 @@ import (
 
 func ParseLGTVVoiceCommand(text string) (string, bool) {
 	normalized := normalizeVoicePhrase(text)
-	switch {
-	case strings.HasPrefix(normalized, "スタックちゃん"):
-		normalized = strings.TrimPrefix(normalized, "スタックちゃん")
-	case strings.HasPrefix(normalized, "すたっくちゃん"):
-		normalized = strings.TrimPrefix(normalized, "すたっくちゃん")
+	if remainder, ok := stripNormalizedStackChanWakePrefix(normalized); ok {
+		normalized = remainder
 	}
 	commands := map[string]string{
 		"テレビつけて": "power", "テレビをつけて": "power", "テレビ付けて": "power", "テレビを付けて": "power",
@@ -36,17 +33,35 @@ func ParseLGTVVoiceCommand(text string) (string, bool) {
 		"8チャンネル": "channel_8", "八チャンネル": "channel_8",
 		"チャンネル8": "channel_8", "チャンネル八": "channel_8", "チャンネルを8にして": "channel_8",
 	}
-	action, ok := commands[normalized]
-	return action, ok
+	matchedAction := ""
+	for phrase, action := range commands {
+		if !strings.Contains(normalized, phrase) {
+			continue
+		}
+		if matchedAction != "" && matchedAction != action {
+			return "", false
+		}
+		matchedAction = action
+	}
+	return matchedAction, matchedAction != ""
 }
 
 func IsStackChanWakePhrase(text string) bool {
-	switch normalizeVoicePhrase(text) {
-	case "スタックちゃん", "すたっくちゃん":
-		return true
-	default:
-		return false
+	remainder, ok := StripStackChanWakePrefix(text)
+	return ok && remainder == ""
+}
+
+func StripStackChanWakePrefix(text string) (string, bool) {
+	return stripNormalizedStackChanWakePrefix(normalizeVoicePhrase(text))
+}
+
+func stripNormalizedStackChanWakePrefix(normalized string) (string, bool) {
+	for _, prefix := range []string{"スタックちゃん", "すたっくちゃん", "さっくちゃん", "タクちゃん"} {
+		if strings.HasPrefix(normalized, prefix) {
+			return strings.TrimPrefix(normalized, prefix), true
+		}
 	}
+	return normalized, false
 }
 
 func normalizeVoicePhrase(text string) string {
