@@ -7,7 +7,7 @@ import (
 )
 
 func ParseLGTVVoiceCommand(text string) (string, bool) {
-	normalized := strings.NewReplacer(" ", "", "　", "", "。", "", "、", "", "!", "", "！", "").Replace(strings.TrimSpace(text))
+	normalized := normalizeVoicePhrase(text)
 	commands := map[string]string{
 		"テレビつけて": "power", "テレビをつけて": "power", "テレビ付けて": "power", "テレビを付けて": "power",
 		"テレビ消して": "power", "テレビを消して": "power",
@@ -19,6 +19,19 @@ func ParseLGTVVoiceCommand(text string) (string, bool) {
 	}
 	action, ok := commands[normalized]
 	return action, ok
+}
+
+func IsStackChanWakePhrase(text string) bool {
+	switch normalizeVoicePhrase(text) {
+	case "スタックちゃん", "すたっくちゃん":
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeVoicePhrase(text string) string {
+	return strings.NewReplacer(" ", "", "　", "", "。", "", "、", "", "!", "", "！", "", "?", "", "？", "").Replace(strings.TrimSpace(text))
 }
 
 func (s *Session) HandleLGTVVoiceCommand(ctx context.Context, text string) (bool, error) {

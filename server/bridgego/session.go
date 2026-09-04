@@ -42,6 +42,7 @@ type Session struct {
 	lastIRManufacturer      string
 	lastIRProtocol          string
 	lastAircon              AirconCommand
+	conversationMode        bool
 }
 
 func NewSession(cfg Config, client *Client, conn *websocket.Conn, logger *log.Logger) *Session {
@@ -345,6 +346,12 @@ func (s *Session) saveIRStateLocked() {
 func (s *Session) HandleTurn(ctx context.Context, packets [][]byte) error {
 	if s.cfg.EnableTVVoiceControl {
 		defer func() {
+			s.stateMu.Lock()
+			conversationMode := s.conversationMode
+			s.stateMu.Unlock()
+			if conversationMode {
+				return
+			}
 			if err := s.StartAmbientListening(); err != nil {
 				s.logger.Printf("session=%s ambient_listening_restart_failed: %v", s.id, err)
 			}
@@ -367,9 +374,19 @@ func (s *Session) HandleTurn(ctx context.Context, packets [][]byte) error {
 	s.stateMu.Lock()
 	s.consecutiveNoInputCount = 0
 	history := append([]Message(nil), s.history...)
+	conversationMode := s.conversationMode
 	s.stateMu.Unlock()
 
-	if s.cfg.EnableTVVoiceControl {
+	if s.cfg.EnableTVVoiceControl && !conversationMode {
+		if IsStackChanWakePhrase(userText) {
+			s.stateMu.Lock()
+			s.conversationMode = true
+			s.stateMu.Unlock()
+			if err := s.SendJSON(map[string]any{"type": "stt", "text": SanitizeDisplayTranscript(userText)}); err != nil {
+				return err
+			}
+			return s.Respond(ctx, "なあに？", true)
+		}
 		handled, err := s.HandleLGTVVoiceCommand(ctx, userText)
 		if !handled {
 			s.logger.Printf("session=%s ambient_voice_ignored text=%q", s.id, userText)
@@ -393,6 +410,9 @@ func (s *Session) HandleTurn(ctx context.Context, packets [][]byte) error {
 	}
 	s.stateMu.Lock()
 	s.pendingEndConversation = end
+	if end && s.cfg.EnableTVVoiceControl {
+		s.conversationMode = false
+	}
 	s.stateMu.Unlock()
 	rawAnswer, err := s.client.RunLLM(ctx, history, userText, "")
 	answer := ""

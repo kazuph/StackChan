@@ -30,3 +30,16 @@ func TestLoadConfigEnablesTVVoiceControl(t *testing.T) {
 		t.Fatal("TV voice control was not enabled")
 	}
 }
+
+func TestStackChanWakePhraseIsExplicit(t *testing.T) {
+	for _, input := range []string{"スタックちゃん", "スタックちゃん？", "すたっくちゃん"} {
+		if !IsStackChanWakePhrase(input) {
+			t.Fatalf("IsStackChanWakePhrase(%q)=false", input)
+		}
+	}
+	for _, input := range []string{"テレビつけて", "スタックちゃんテレビつけて", "ねえスタックちゃん"} {
+		if IsStackChanWakePhrase(input) {
+			t.Fatalf("IsStackChanWakePhrase(%q)=true", input)
+		}
+	}
+}
