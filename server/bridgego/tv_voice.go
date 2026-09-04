@@ -8,6 +8,12 @@ import (
 
 func ParseLGTVVoiceCommand(text string) (string, bool) {
 	normalized := normalizeVoicePhrase(text)
+	switch {
+	case strings.HasPrefix(normalized, "スタックちゃん"):
+		normalized = strings.TrimPrefix(normalized, "スタックちゃん")
+	case strings.HasPrefix(normalized, "すたっくちゃん"):
+		normalized = strings.TrimPrefix(normalized, "すたっくちゃん")
+	}
 	commands := map[string]string{
 		"テレビつけて": "power", "テレビをつけて": "power", "テレビ付けて": "power", "テレビを付けて": "power",
 		"テレビ消して": "power", "テレビを消して": "power",
