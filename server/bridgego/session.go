@@ -373,6 +373,9 @@ func (s *Session) HandleTurn(ctx context.Context, packets [][]byte) error {
 	}
 	if userText == "" {
 		if s.cfg.EnableTVVoiceControl {
+			if conversationMode {
+				return s.StartAmbientListening()
+			}
 			return nil
 		}
 		return s.handleMissedInput(ctx)
