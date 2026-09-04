@@ -2,6 +2,7 @@ package bridgego
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"os/exec"
 	"testing"
@@ -32,12 +33,23 @@ func TestOpusPacketsToWAVBytesDecodesGeneratedPackets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wav, err := OpusPacketsToWAVBytes(packets, InputSampleRate)
+	wav, err := OpusPacketsToWAVBytes(context.Background(), packets, InputSampleRate)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.HasPrefix(wav, []byte("RIFF")) {
 		t.Fatalf("decoded output is not wav: %q", wav[:4])
+	}
+}
+
+func TestOpusPacketsToWAVBytesHonorsCanceledContext(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg is required for bridge audio conversion")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := OpusPacketsToWAVBytes(ctx, [][]byte{{0xf8, 0xff, 0xfe}}, InputSampleRate); err == nil {
+		t.Fatal("expected canceled audio conversion to fail")
 	}
 }
 

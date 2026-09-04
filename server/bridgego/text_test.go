@@ -189,7 +189,7 @@ func TestOpusWAVRoundTrip(t *testing.T) {
 	if len(packets) == 0 {
 		t.Fatal("expected opus packets")
 	}
-	decoded, err := OpusPacketsToWAVBytes(packets, InputSampleRate)
+	decoded, err := OpusPacketsToWAVBytes(context.Background(), packets, InputSampleRate)
 	if err != nil {
 		t.Fatal(err)
 	}

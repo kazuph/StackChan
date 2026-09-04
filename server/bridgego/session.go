@@ -344,6 +344,8 @@ func (s *Session) saveIRStateLocked() {
 }
 
 func (s *Session) HandleTurn(ctx context.Context, packets [][]byte) error {
+	recognitionCtx, cancelRecognition := context.WithTimeout(ctx, bridgeRequestTimeout)
+	defer cancelRecognition()
 	if s.cfg.EnableTVVoiceControl {
 		defer func() {
 			s.stateMu.Lock()
@@ -357,11 +359,11 @@ func (s *Session) HandleTurn(ctx context.Context, packets [][]byte) error {
 			}
 		}()
 	}
-	wavBytes, err := OpusPacketsToWAVBytes(packets, InputSampleRate)
+	wavBytes, err := OpusPacketsToWAVBytes(recognitionCtx, packets, InputSampleRate)
 	if err != nil {
 		return err
 	}
-	userText, err := s.client.RunSTT(ctx, wavBytes)
+	userText, err := s.client.RunSTT(recognitionCtx, wavBytes)
 	if err != nil {
 		return err
 	}

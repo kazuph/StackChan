@@ -2,6 +2,7 @@ package bridgego
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -97,12 +98,12 @@ func WAVBytesToPCM(wavBytes []byte) ([]int16, int, int, error) {
 	return pcm, sampleRate, channels, nil
 }
 
-func OpusPacketsToWAVBytes(packets [][]byte, sampleRate int) ([]byte, error) {
+func OpusPacketsToWAVBytes(ctx context.Context, packets [][]byte, sampleRate int) ([]byte, error) {
 	if len(packets) == 0 {
 		return nil, errors.New("no opus packets")
 	}
 	ogg := BuildOggOpus(packets)
-	cmd := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "ogg", "-i", "pipe:0", "-ac", "1", "-ar", fmt.Sprint(sampleRate), "-f", "wav", "pipe:1")
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "ogg", "-i", "pipe:0", "-ac", "1", "-ar", fmt.Sprint(sampleRate), "-f", "wav", "pipe:1")
 	cmd.Stdin = bytes.NewReader(ogg)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

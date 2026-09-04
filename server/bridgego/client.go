@@ -17,11 +17,13 @@ type Client struct {
 	http *http.Client
 }
 
+const bridgeRequestTimeout = 120 * time.Second
+
 func NewClient(cfg Config) *Client {
 	return &Client{
 		cfg: cfg,
 		http: &http.Client{
-			Timeout: 120 * time.Second,
+			Timeout: bridgeRequestTimeout,
 		},
 	}
 }
