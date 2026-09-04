@@ -396,7 +396,7 @@ func (s *Session) HandleTurn(ctx context.Context, packets [][]byte) error {
 			if remainder != "" {
 				userText = remainder
 			} else {
-				if err := s.SendJSON(map[string]any{"type": "stt", "text": "聞いてるよ"}); err != nil {
+				if err := s.SendJSON(map[string]any{"type": "stt", "text": SanitizeDisplayTranscript(userText)}); err != nil {
 					return err
 				}
 				return s.Respond(ctx, "なあに？", true)

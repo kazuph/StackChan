@@ -246,7 +246,7 @@ index d69d43d..633bcbe 100644
  
 @@ -496,8 +565,12 @@ void Application::InitializeProtocol() {
      });
-     
+ 
      protocol_->OnIncomingAudio([this](std::unique_ptr<AudioStreamPacket> packet) {
 -        if (GetDeviceState() == kDeviceStateSpeaking) {
 -            audio_service_.PushPacketToDecodeQueue(std::move(packet));
@@ -810,49 +810,42 @@ index 7bc917b..874b137 100644
  
  #endif // I2C_DEVICE_H
 diff --git a/main/display/lcd_display.cc b/main/display/lcd_display.cc
-index 239e10f..7de0781 100644
+index 239e10f..89f5ad6 100644
 --- a/main/display/lcd_display.cc
 +++ b/main/display/lcd_display.cc
-@@ -512,6 +512,7 @@ void LcdDisplay::SetChatMessage(const char* role, const char* content) {
-         }
+@@ -1042,13 +1042,8 @@ void LcdDisplay::SetChatMessage(const char* role, const char* content) {
          return;
      }
-+    ESP_LOGI(TAG, "Bubble message role=%s content=%s", role ? role : "(null)", content ? content : "(null)");
-     
-     // Check if message count exceeds limit
-     uint32_t child_count = lv_obj_get_child_cnt(content_);
-@@ -929,6 +930,7 @@ void LcdDisplay::SetupUI() {
-     bottom_bar_ = lv_obj_create(screen);
-     lv_obj_set_width(bottom_bar_, LV_HOR_RES);
-     lv_obj_set_height(bottom_bar_, LV_SIZE_CONTENT);
-+    lv_obj_set_style_min_height(bottom_bar_, text_font->line_height * 3 + lvgl_theme->spacing(8), 0);
-     lv_obj_set_style_radius(bottom_bar_, 0, 0);
-     lv_obj_set_style_bg_color(bottom_bar_, lvgl_theme->background_color(), 0);
-     lv_obj_set_style_bg_opa(bottom_bar_, LV_OPA_50, 0);
-@@ -942,6 +944,7 @@ void LcdDisplay::SetupUI() {
-     chat_message_label_ = lv_label_create(bottom_bar_);
-     lv_label_set_text(chat_message_label_, "");
-     lv_obj_set_width(chat_message_label_, LV_HOR_RES - lvgl_theme->spacing(8));
-+    lv_obj_set_style_min_height(chat_message_label_, text_font->line_height * 3, 0);
-     lv_label_set_long_mode(chat_message_label_, LV_LABEL_LONG_WRAP);
-     lv_obj_set_style_text_align(chat_message_label_, LV_TEXT_ALIGN_CENTER, 0);
-     lv_obj_set_style_text_color(chat_message_label_, lvgl_theme->text_color(), 0);
-@@ -1041,12 +1044,13 @@ void LcdDisplay::SetChatMessage(const char* role, const char* content) {
-         }
-         return;
-     }
-+    ESP_LOGI(TAG, "Bubble message role=%s content=%s", role ? role : "(null)", content ? content : "(null)");
      lv_label_set_text(chat_message_label_, content);
 -    // Show bottom_bar_ only when there is content (and subtitle is not globally hidden)
-+    // The custom bridge controls visibility by sending empty or non-empty text.
      if (bottom_bar_ != nullptr) {
-         if (content == nullptr || content[0] == '\0') {
-             lv_obj_add_flag(bottom_bar_, LV_OBJ_FLAG_HIDDEN);
+-        if (content == nullptr || content[0] == '\0') {
+-            lv_obj_add_flag(bottom_bar_, LV_OBJ_FLAG_HIDDEN);
 -        } else if (!hide_subtitle_) {
-+        } else {
-             lv_obj_remove_flag(bottom_bar_, LV_OBJ_FLAG_HIDDEN);
-         }
+-            lv_obj_remove_flag(bottom_bar_, LV_OBJ_FLAG_HIDDEN);
+-        }
++        lv_obj_add_flag(bottom_bar_, LV_OBJ_FLAG_HIDDEN);
      }
+ #if CONFIG_USE_MULTILINE_CHAT_MESSAGE
+     // Re-align bottom_bar_ after text change so it stays anchored to the bottom
+@@ -1292,16 +1287,7 @@ void LcdDisplay::SetHideSubtitle(bool hide) {
+     DisplayLockGuard lock(this);
+     hide_subtitle_ = hide;
+     
+-    // Immediately update UI visibility based on the setting
+     if (bottom_bar_ != nullptr) {
+-        if (hide) {
+-            lv_obj_add_flag(bottom_bar_, LV_OBJ_FLAG_HIDDEN);
+-        } else {
+-            // Only show if there is actual content to display
+-            const char* text = (chat_message_label_ != nullptr) ? lv_label_get_text(chat_message_label_) : nullptr;
+-            if (text != nullptr && text[0] != '\0') {
+-                lv_obj_remove_flag(bottom_bar_, LV_OBJ_FLAG_HIDDEN);
+-            }
+-        }
++        lv_obj_add_flag(bottom_bar_, LV_OBJ_FLAG_HIDDEN);
+     }
+ }
 diff --git a/main/protocols/protocol.cc b/main/protocols/protocol.cc
 index 470cc91..fcbb50c 100644
 --- a/main/protocols/protocol.cc
