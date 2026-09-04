@@ -363,7 +363,11 @@ func (s *Session) HandleTurn(ctx context.Context, packets [][]byte) error {
 	if err != nil {
 		return err
 	}
-	userText, err := s.client.RunSTT(recognitionCtx, wavBytes)
+	s.stateMu.Lock()
+	conversationMode := s.conversationMode
+	s.stateMu.Unlock()
+	ambientGate := s.cfg.EnableTVVoiceControl && !conversationMode
+	userText, err := s.client.RunSTT(recognitionCtx, wavBytes, ambientGate)
 	if err != nil {
 		return err
 	}
@@ -376,7 +380,7 @@ func (s *Session) HandleTurn(ctx context.Context, packets [][]byte) error {
 	s.stateMu.Lock()
 	s.consecutiveNoInputCount = 0
 	history := append([]Message(nil), s.history...)
-	conversationMode := s.conversationMode
+	conversationMode = s.conversationMode
 	s.stateMu.Unlock()
 
 	if s.cfg.EnableTVVoiceControl && !conversationMode {

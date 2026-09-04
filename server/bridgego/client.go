@@ -28,11 +28,16 @@ func NewClient(cfg Config) *Client {
 	}
 }
 
-func (c *Client) RunSTT(ctx context.Context, wavBytes []byte) (string, error) {
+func (c *Client) RunSTT(ctx context.Context, wavBytes []byte, ambientGate bool) (string, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	if err := writer.WriteField("language", "ja"); err != nil {
 		return "", err
+	}
+	if ambientGate {
+		if err := writer.WriteField("gate", "stackchan"); err != nil {
+			return "", err
+		}
 	}
 	part, err := writer.CreateFormFile("file", "stackchan.wav")
 	if err != nil {

@@ -66,7 +66,7 @@ STACKCHAN_VOICE_LOCK_ID=
 STACKCHAN_ENABLE_TV_VOICE_CONTROL=false
 ```
 
-`STACKCHAN_ENABLE_TV_VOICE_CONTROL=true` enables continuous edge-VAD listening. Only detected speech is sent to STT, and only the fixed LG TV power, volume, and channel 1–3 phrases are dispatched; all other transcripts are ignored without LLM or TTS.
+`STACKCHAN_ENABLE_TV_VOICE_CONTROL=true` enables continuous edge-VAD listening. A continuous speech region is cut after 10 seconds, and ambient turns use the STT server's lightweight CPU gate before faster-whisper. The gate admits the StackChan wake phrase and fixed LG TV power, volume, and channel 1–8 phrases; conversation turns bypass the gate and use faster-whisper directly.
 
 Run the Go bridge:
 
